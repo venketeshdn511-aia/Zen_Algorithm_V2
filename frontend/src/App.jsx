@@ -603,7 +603,11 @@ function StratCard({ s, selected, onClick, onAction }) {
       <div className="sc-chart"><MiniLine data={s.equity || []} up={isUp} /></div>
       <div className="sc-btns" onClick={e => e.stopPropagation()}>
         {s.status === "running" && <button className="sc-btn pause-btn" onClick={() => onAction(s, "pause")}>Pause</button>}
-        {(s.status === "paused" || s.status === "error") && <button className="sc-btn resume-btn" onClick={() => onAction(s, "resume")}>Resume</button>}
+        {(s.status === "paused" || s.status === "error" || s.status === "stopped") && (
+          <button className="sc-btn resume-btn" onClick={() => onAction(s, s.status === "stopped" ? "start" : "resume")}>
+            {s.status === "stopped" ? "Start" : "Resume"}
+          </button>
+        )}
         <button className="sc-btn stop-btn" onClick={() => onAction(s, "stop")}>Stop</button>
       </div>
     </div>
@@ -744,9 +748,13 @@ function StratDrawer({ s, onClose, onAction }) {
         </div>
 
         <div className="da">
-          {s.status === "running" && <button className="da-btn pause" onClick={() => { onAction(s, "pause"); onClose() }}>⏸ Pause</button>}
-          {(s.status === "paused" || s.status === "error") && <button className="da-btn resume" onClick={() => { onAction(s, "resume"); onClose() }}>▶ Resume</button>}
-          <button className="da-btn stop" onClick={() => { onAction(s, "stop"); onClose() }}>⛔ Stop</button>
+{s.status === "running" && <button className="da-btn pause" onClick={() => { onAction(s, "pause"); onClose() }}>⏸ Pause</button>}
+{(s.status === "paused" || s.status === "error" || s.status === "stopped") && (
+<button className="da-btn resume" onClick={() => { onAction(s, s.status === "stopped" ? "start" : "resume"); onClose() }}>
+{s.status === "stopped" ? "▶ Start" : "▶ Resume"}
+</button>
+)}
+<button className="da-btn stop" onClick={() => { onAction(s, "stop"); onClose() }}>⛔ Stop</button>
         </div>
       </div>
     </div>

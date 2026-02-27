@@ -83,6 +83,7 @@ async def lifespan(app: FastAPI):
     
     app.state.executor = executor
     app.state.feed = feed
+    app.state.broker = broker
     
     logger.info("Bot components initialized and background tasks started")
     

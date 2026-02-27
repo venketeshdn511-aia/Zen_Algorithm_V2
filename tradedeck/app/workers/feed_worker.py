@@ -130,27 +130,67 @@ class FeedWorker:
 
     async def _connect_and_receive(self) -> None:
         """Single connection lifetime."""
+        from fyers_apiv3.fyers_websocket import data_ws
+
         logger.info("Feed: connecting to Fyers WebSocket...")
-        await self._mark_connected()
         self._consecutive_failures = 0
 
-        # In production: replace with actual Fyers WS client
-        # from fyers_apiv3 import data_socket
-        # async for tick in ws_client.subscribe(self._subscribed):
-        #     await self._on_tick(tick)
+        access_token = f"{self.broker.app_id}:{self.broker.access_token}"
+        
+        # Initialize the Fyers DataSocket
+        self._fyers = data_ws.FyersDataSocket(
+            access_token=access_token,
+            log_path=os.getcwd(),
+            litemode=False,
+            write_to_file=False,
+            reconnect=True,
+            on_connect=self._on_ws_open,
+            on_close=self._on_ws_close,
+            on_error=self._on_ws_error,
+            on_message=self._on_ws_message
+        )
 
-        # Simulation for wiring purposes
+        self._fyers.connect()
+        
+        # Keep the coroutine alive while running
         while self._running:
-            tick = {
-                "symbol": "NSE:NIFTY50-INDEX",
-                "ltp":    25424.65 + (asyncio.get_event_loop().time() % 100),
-                "ts":     datetime.now(timezone.utc).isoformat(),
-                "vol":    1234567,
-                "oi":     0,
-                "source": "ws",
-            }
-            await self._on_tick(tick)
-            await asyncio.sleep(0.5)  # Simulated 500ms feed
+            await asyncio.sleep(1)
+        
+        if hasattr(self, "_fyers"):
+            # self._fyers.close() # Library usually handles this via reconnect=True
+            pass
+
+    def _on_ws_open(self):
+        logger.info("Fyers WebSocket Connection Opened")
+        self._connected = True
+        # Subscribe to symbols
+        if self._subscribed and hasattr(self, "_fyers"):
+            from fyers_apiv3.fyers_websocket import data_ws
+            # Subscribe to all symbols in list
+            # Note: fyers_apiv3 DataSocket usually expects a list of symbols
+            self._fyers.subscribe(
+                symbols=list(self._subscribed), 
+                data_type=data_ws.FyersDataSocket.LTP_DATA
+            )
+            # Mark connected in DB/Redis after subscription
+            asyncio.create_task(self._mark_connected())
+
+    def _on_ws_close(self):
+        logger.warning("Fyers WebSocket Connection Closed")
+        self._connected = False
+        asyncio.create_task(self._mark_disconnected())
+
+    def _on_ws_error(self, error):
+        logger.error(f"Fyers WebSocket Error: {error}")
+
+    def _on_ws_message(self, message):
+        """Handle incoming WebSocket messages."""
+        # Translate Fyers message to internal tick format
+        # message is usually a dict for LTP/Depth
+        if "symbol" in message:
+            # Inject source for observability
+            message["source"] = "ws"
+            asyncio.create_task(self._on_tick(message))
 
     async def _on_tick(self, tick: dict) -> None:
         """Called on every tick. Critical path — must be fast."""

@@ -286,12 +286,40 @@ async def get_telemetry(
         # ── Net delta — real aggregation ──────────────────────────────────────
         delta = await _get_net_delta(db)
 
-        # ── Margin (from broker funds, cached in session or Redis) ─────────────
-        # In production: BrokerService.get_funds() called by a 10s background task
-        # that writes to Redis → read here. Below reads from Redis with DB fallback.
-        margin_used = 0   # TODO: redis.get("tradedeck:margin_used") → fallback broker call
-        margin_total = 0
-        margin_pct   = 0.0
+        # ── Margin (from broker funds, cached in Redis) ───────────────────────
+        margin_used = 0.0
+        margin_total = 1.0
+        margin_pct = 0.0
+
+        broker = getattr(request.app.state, "broker", None)
+        if broker:
+            try:
+                # Try to get from Redis cache first
+                cache_key = "tradedeck:margin_data"
+                if redis:
+                    cached = await redis.get(cache_key)
+                    if cached:
+                        m_data = json.loads(cached)
+                        margin_used = m_data.get("used", 0)
+                        margin_total = m_data.get("total", 1)
+                
+                # If not in cache, fetch from broker
+                if margin_total == 1.0:
+                    funds = await broker.get_funds()
+                    equity = funds.get("equity", {})
+                    margin_used = float(equity.get("used_margin", 0))
+                    margin_total = float(equity.get("available_margin", 1))
+                    
+                    if redis:
+                        await redis.set(cache_key, json.dumps({
+                            "used": margin_used,
+                            "total": margin_total
+                        }), ex=10) # 10s TTL
+            except Exception as e:
+                logger.warning(f"Failed to fetch live margin: {e}")
+
+        if margin_total > 0:
+            margin_pct = round((margin_used / margin_total) * 100, 1)
 
         # ── Reconciliation lag ─────────────────────────────────────────────────
         recon_lag = None
@@ -621,6 +649,24 @@ async def resume_strategy(
 
     try:
         result = await _ctrl_svc.send_intent(db, strategy_name, "resume", actor, ip)
+        return result
+    except StrategyControlError as e:
+        raise HTTPException(status_code=409, detail={"code": e.code, "message": e.message})
+
+
+@router.post("/strategies/{strategy_name}/start")
+async def start_strategy(
+    strategy_name: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    token: dict = Depends(verify_token),
+):
+    """Start a stopped strategy."""
+    actor = token.get("sub", "unknown")
+    ip    = request.client.host if request.client else None
+
+    try:
+        result = await _ctrl_svc.send_intent(db, strategy_name, "start", actor, ip)
         return result
     except StrategyControlError as e:
         raise HTTPException(status_code=409, detail={"code": e.code, "message": e.message})
