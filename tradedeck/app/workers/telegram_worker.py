@@ -53,6 +53,9 @@ class TelegramWorker:
                     if response.status_code == 200:
                         data = response.json()
                         await self._process_updates(data.get("result", []))
+                    elif response.status_code == 409:
+                        # Another web worker (Gunicorn) is already polling; silently ignore to prevent log spam
+                        await asyncio.sleep(15)
                     else:
                         logger.error(f"Telegram poll failed: {response.status_code}")
                         await asyncio.sleep(5)

@@ -157,13 +157,25 @@ async def _get_live_pool_stats() -> dict:
     """
     try:
         pool = engine.pool
-        return {
-            "size":        pool.size(),
-            "checked_out": pool.checkedout(),
-            "overflow":    pool.overflow(),
-            "checked_in":  pool.checkedin(),
-            "usage_pct":   round((pool.checkedout() / max(pool.size(), 1)) * 100),
-        }
+        
+        # SQLite uses NullPool or SingletonThreadPool which don't have .size()
+        if hasattr(pool, 'size'):
+            return {
+                "size":        pool.size(),
+                "checked_out": pool.checkedout(),
+                "overflow":    pool.overflow(),
+                "checked_in":  pool.checkedin(),
+                "usage_pct":   round((pool.checkedout() / max(pool.size(), 1)) * 100),
+            }
+        else:
+            # Fallback for SQLite NullPool
+            return {
+                "size": 1,
+                "checked_out": pool.checkedout() if hasattr(pool, 'checkedout') else 0,
+                "overflow": 0,
+                "checked_in": 0,
+                "usage_pct": 0
+            }
     except Exception as e:
         logger.warning(f"Pool stats unavailable: {e}")
         return {"size": 0, "checked_out": 0, "overflow": 0, "usage_pct": 0}
