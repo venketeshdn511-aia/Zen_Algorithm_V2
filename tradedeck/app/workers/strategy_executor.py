@@ -27,6 +27,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.services.strategy_control import StrategyControlService
 from app.models.db import StrategyState
+from app.services.options_service import options_service
 
 logger = logging.getLogger(__name__)
 _ctrl  = StrategyControlService()
@@ -280,6 +281,18 @@ class StrategyExecutor:
         )
         strategy = result.scalar_one_or_none()
         if not strategy: return
+
+        # INTERCEPT AND RESOLVE OPTIONS LEGS
+        target_instrument = m.get("target_instrument")
+        if target_instrument and m.get("signal") in ["BUY", "SELL", "SHORT"]:
+            if target_instrument.get("type") == "OPTION":
+                spot_price = m.get("ltp")
+                leg_type = target_instrument.get("leg") # CE or PE
+                if spot_price and leg_type:
+                    opt_symbol = await options_service.get_atm_option_symbol(spot_price, leg_type)
+                    if opt_symbol:
+                        m["target_symbol"] = opt_symbol
+                        logger.info(f"Strategy {name} dynamically targeting option {opt_symbol} at spot {spot_price}")
 
         strategy.pnl = m.get("pnl", 0)
         strategy.open_qty = m.get("open_qty", 0)

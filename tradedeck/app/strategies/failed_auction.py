@@ -134,7 +134,8 @@ class FailedAuctionB2:
                 "signal": "SELL",
                 "ltp": close_p,
                 "pnl": 0,
-                "direction": "SHORT"
+                "direction": "SHORT",
+                "target_instrument": {"type": "OPTION", "leg": "PE"}
             }
 
         return {

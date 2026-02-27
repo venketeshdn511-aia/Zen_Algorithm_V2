@@ -122,7 +122,8 @@ class StatisticalSniper:
                 "entry": ltp,
                 "sl": sl,
                 "t1": t1,
-                "stage": 0
+                "stage": 0,
+                "target_instrument": {"type": "OPTION", "leg": "CE" if signal == "BUY" else "PE"}
             }
             logger.info(f"StatisticalSniper: SIGNAL {signal} at {ltp}, SL: {sl}, T1: {t1}")
             
@@ -130,7 +131,8 @@ class StatisticalSniper:
                 "signal": signal,
                 "ltp": ltp,
                 "avg_entry": ltp,
-                "direction": signal
+                "direction": signal,
+                "target_instrument": {"type": "OPTION", "leg": "CE" if signal == "BUY" else "PE"}
             }
 
         return {
