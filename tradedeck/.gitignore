@@ -1,0 +1,34 @@
+# Environment variables
+.env
+
+# Databases
+*.db
+*.sqlite
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+
+# Reports and temporary files
+reports/
+*.png
+*.pdf
+
+# Logs
+*.log
+emergency_trace.log
+startup.log
+
+# NODE
+node_modules/
+package-lock.json
+
+# IDE
+.vscode/
+.idea/
+.gemini/

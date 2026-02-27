@@ -1,0 +1,6 @@
+{
+  "msg": "unterminated string literal (detected at line 572)",
+  "line": 572,
+  "offset": 22,
+  "text": "    If executor doesn't ack within 10s, returns status=pending (not an error)."
+}

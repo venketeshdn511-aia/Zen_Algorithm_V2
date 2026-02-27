@@ -1,0 +1,49 @@
+# Core
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+gunicorn==22.0.0
+
+# Database
+sqlalchemy[asyncio]==2.0.30
+asyncpg==0.29.0
+alembic==1.13.1
+
+# Config + validation
+pydantic==2.7.1
+pydantic-settings==2.2.1
+
+# HTTP client (Fyers API calls)
+httpx==0.27.0
+
+# Retry + resilience
+tenacity==8.3.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Cache + distributed features
+redis==5.0.4
+
+# Observability
+prometheus-client==0.20.0
+
+# Utils
+python-dotenv==1.0.1
+websockets==12.0
+
+# Testing
+pytest==8.2.0
+pytest-asyncio==0.23.6
+aiosqlite==0.20.0
+
+# Analytical & Reporting
+pandas>=2.2.2
+numpy>=1.26.4
+matplotlib==3.9.0
+reportlab==4.2.0
+psutil==5.9.8
+
+# MongoDB
+motor==3.4.0
+pymongo<4.9

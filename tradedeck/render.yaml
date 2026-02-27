@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: tradedeck-bot
+    env: docker
+    plan: free
+    region: singapore # Adjust as needed (closer to NSE is better, though Fyers is in India)
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: PYTHONPATH
+        value: /app
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - fromGroup: tradedeck-secrets
+
+envVarGroups:
+  - name: tradedeck-secrets
+    envVars:
+      - key: FYERS_APP_ID
+        sync: false
+      - key: FYERS_SECRET_ID
+        sync: false
+      - key: FYERS_REDIRECT_URI
+        sync: false
+      - key: FYERS_ACCESS_TOKEN
+        sync: false
+      - key: FYERS_REFRESH_TOKEN
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: DATABASE_URL
+        sync: false # Optional, bot can run in Mongo-only mode or use SQLite on disk
