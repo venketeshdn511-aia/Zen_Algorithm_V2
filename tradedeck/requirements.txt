@@ -14,6 +14,7 @@ pydantic-settings==2.2.1
 
 # HTTP client (Fyers API calls)
 httpx==0.27.0
+fyers-apiv3==3.1.7
 
 # Retry + resilience
 tenacity==8.3.0

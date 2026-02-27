@@ -223,9 +223,17 @@ class StrategyControlService:
 
             # Executor acks by clearing intent and updating status
             if row.control_intent is None and row.status == expected_status:
-                if row.intent_acked_at and row.intent_acked_at >= intent_set_at:
+                acked_at = row.intent_acked_at
+                # Handle SQLite/Production returning strings instead of datetimes
+                if isinstance(acked_at, str):
+                    try:
+                        acked_at = datetime.fromisoformat(acked_at.replace('Z', '+00:00'))
+                    except ValueError:
+                        acked_at = None
+
+                if acked_at and acked_at >= intent_set_at:
                     latency_ms = round(
-                        (row.intent_acked_at - intent_set_at).total_seconds() * 1000
+                        (acked_at - intent_set_at).total_seconds() * 1000
                     )
                     return {
                         "acked": True,
