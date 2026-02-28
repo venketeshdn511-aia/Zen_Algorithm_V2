@@ -47,10 +47,11 @@ async def lifespan(app: FastAPI):
 
     # 2. Record system startup in audit logs
     try:
+        import uuid
         async with engine.begin() as conn:
             await conn.execute(
-                text("INSERT INTO audit_logs (event_type, created_at) VALUES (:e, :ts)"),
-                {"e": "SYSTEM_STARTUP", "ts": datetime.now(timezone.utc)}
+                text("INSERT INTO audit_logs (id, event_type, created_at) VALUES (:i, :e, :ts)"),
+                {"i": str(uuid.uuid4()), "e": "SYSTEM_STARTUP", "ts": datetime.now(timezone.utc)}
             )
         logger.info("Lifespan: Startup audit log recorded.")
     except Exception as e:
