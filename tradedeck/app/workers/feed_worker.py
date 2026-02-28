@@ -21,6 +21,7 @@ The observability endpoint reads these keys for real feed health.
 import asyncio
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from typing import Optional, Set
