@@ -169,9 +169,10 @@ class FeedWorker:
             from fyers_apiv3.FyersWebsocket import data_ws
             # Subscribe to all symbols in list
             # Note: fyers_apiv3 DataSocket usually expects a list of symbols
+            data_type = getattr(data_ws.FyersDataSocket, "Ltp", "symbolData")
             self._fyers.subscribe(
                 symbols=list(self._subscribed), 
-                data_type=data_ws.FyersDataSocket.LTP_DATA
+                data_type=data_type
             )
             # Mark connected in DB/Redis after subscription
             asyncio.create_task(self._mark_connected())
