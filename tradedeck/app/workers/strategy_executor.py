@@ -447,16 +447,130 @@ class StrategyExecutor:
                             f"• Reason: _{risk_result.message}_"
                         ))
 
-            # Exit Alert (TODO: Automatic exit order execution similar to entry above)
+            # Exit Alert and LIVE ORDER PLACEMENT
             elif new_sig.startswith("EXIT_"):
-                asyncio.create_task(self.notifier.alert_exit(
-                    strategy=name,
-                    symbol=final_target_symbol,
-                    side=m.get("direction", "NEUTRAL"),
-                    price=m.get("ltp", 0),
-                    pnl=m.get("pnl", 0),
-                    reason=new_sig
-                ))
+                # 1. Determine execution parameters
+                qty = m.get("open_qty", 50)
+                # Opposite side to exit: If we were Long (BUY), we now SELL to exit (-1). If Short, BUY to exit (1).
+                direction = m.get("direction", "NEUTRAL") 
+                if direction == "LONG":
+                    broker_side = -1 # SELL
+                    db_side = OrderSide.SELL
+                elif direction == "SHORT":
+                    broker_side = 1  # BUY
+                    db_side = OrderSide.BUY
+                else: 
+                     # Fallback if direction wasn't explicitly passed, we guess based on exit logic or skip.
+                    logger.warning(f"Could not conclusively determine exit side for {name}. Defaulting to SELL to close.")
+                    broker_side = -1 
+                    db_side = OrderSide.SELL
+                    
+                # 2. Get active TradingSession
+                from datetime import date
+                from app.models.db import TradingSession, Order, OrderStatus, ProductType, OrderType
+                import uuid
+                today = date.today().isoformat()
+                ts_query = await db.execute(select(TradingSession).where(TradingSession.date == today))
+                session_obj = ts_query.scalar_one_or_none()
+                
+                if not session_obj:
+                    logger.error(f"Cannot execute {new_sig} for {name}: No Active TradingSession found for {today}")
+                    asyncio.create_task(self.notifier.send_message(f"⚠️ *ERROR*: Strategy `{name}` triggered {new_sig} but no active `TradingSession` exists for today."))
+                else:
+                    idempotency_key = f"{name}_{new_sig}_{datetime.now(timezone.utc).strftime('%H%M%S')}_{str(uuid.uuid4())[:8]}"
+                    # 3. Call RiskEngine
+                    risk_result = await self.risk.validate_order(
+                        db=db,
+                        session=session_obj,
+                        symbol=final_target_symbol,
+                        side=db_side.value,
+                        quantity=qty,
+                        order_type="MARKET",
+                        price=m.get("ltp"),
+                        product_type="INTRADAY",
+                        idempotency_key=idempotency_key
+                    )
+                    
+                    if risk_result.approved:
+                        # 4. Write Order to DB
+                        new_order = Order(
+                            id=str(uuid.uuid4()),
+                            session_id=session_obj.id,
+                            idempotency_key=idempotency_key,
+                            symbol=final_target_symbol,
+                            display_symbol=final_target_symbol,
+                            side=db_side,
+                            order_type=OrderType.MARKET,
+                            product_type=ProductType.INTRADAY,
+                            quantity=qty,
+                            price=m.get("ltp"),
+                            status=OrderStatus.PENDING,
+                            risk_snapshot=risk_result.snapshot
+                        )
+                        db.add(new_order)
+                        await db.flush()
+                        
+                        # 5. Dispatch to Broker
+                        order_data = {
+                            "symbol": final_target_symbol,
+                            "qty": qty,
+                            "type": 2, # MARKET
+                            "side": broker_side,
+                            "productType": "INTRADAY",
+                            "limitPrice": 0,
+                            "stopPrice": 0,
+                            "validity": "DAY",
+                            "disclosedQty": 0,
+                            "offlineOrder": False
+                        }
+                        
+                        try:
+                            # Actually place the live order
+                            broker_resp = await self.broker.submit_order(order_data)
+                            logger.info(f"Live Broker RESPONSE (EXIT) for {name}: {broker_resp}")
+                            
+                            if broker_resp.get("s") == "ok":
+                                order_id_fyers = broker_resp.get("id")
+                                new_order.broker_order_id = order_id_fyers
+                                new_order.status = OrderStatus.ACKNOWLEDGED
+                                new_order.sent_at = datetime.now(timezone.utc)
+                                new_order.acked_at = datetime.now(timezone.utc)
+                                new_order.status_history = [{"status": "ACKNOWLEDGED", "time": datetime.now(timezone.utc).isoformat(), "actor": "SYSTEM", "reason": "Fyers API accept"}]
+                                
+                                # Send Success Telegram Alert
+                                asyncio.create_task(self.notifier.alert_exit(
+                                    strategy=name,
+                                    symbol=final_target_symbol,
+                                    side=m.get("direction", "NEUTRAL"),
+                                    price=m.get("ltp", 0),
+                                    pnl=m.get("pnl", 0),
+                                    reason=f"{new_sig} Executed (Broker ID: {order_id_fyers})"
+                                ))
+                            else:
+                                new_order.status = OrderStatus.REJECTED
+                                new_order.reject_reason = broker_resp.get("message", "Broker rejection")
+                                new_order.status_history = [{"status": "REJECTED", "time": datetime.now(timezone.utc).isoformat(), "actor": "BROKER", "reason": new_order.reject_reason}]
+                                asyncio.create_task(self.notifier.send_message(
+                                    f"❌ *BROKER REJECTED EXIT*: `{name}`\n"
+                                    f"• Action: {new_sig} {qty}x {final_target_symbol}\n"
+                                    f"• Reason: {new_order.reject_reason}"
+                                ))
+                        except Exception as e:
+                            logger.error(f"Error submitting live EXIT order to broker: {e}")
+                            new_order.status = OrderStatus.REJECTED
+                            new_order.reject_reason = f"Exception during submission: {str(e)}"
+                            asyncio.create_task(self.notifier.send_message(
+                                f"❌ *SYSTEM ERROR*: Failed to route `{name}` EXIT to broker.\n"
+                                f"• Exception: {str(e)}"
+                            ))
+                            
+                    else:
+                        # Risk Rejected
+                        asyncio.create_task(self.notifier.send_message(
+                            f"🛡️ *RISK BLOCKED EXIT*: `{name}`\n"
+                            f"• Action: {new_sig} {qty}x {final_target_symbol}\n"
+                            f"• Reason: _{risk_result.message}_"
+                        ))
         
         self._prev_signals[name] = new_sig
         if m.get("last_trade_at"):
