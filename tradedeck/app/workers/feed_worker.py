@@ -62,6 +62,7 @@ class FeedWorker:
 
         # In-process tick handlers (registered by strategies)
         self._tick_handlers = []
+        self._loop = asyncio.get_event_loop()
 
     def register_tick_handler(self, handler):
         """Strategy executor registers here to receive live ticks."""
@@ -175,12 +176,12 @@ class FeedWorker:
                 data_type=data_type
             )
             # Mark connected in DB/Redis after subscription
-            asyncio.create_task(self._mark_connected())
+            asyncio.run_coroutine_threadsafe(self._mark_connected(), self._loop)
 
     def _on_ws_close(self):
         logger.warning("Fyers WebSocket Connection Closed")
         self._connected = False
-        asyncio.create_task(self._mark_disconnected())
+        asyncio.run_coroutine_threadsafe(self._mark_disconnected(), self._loop)
 
     def _on_ws_error(self, error):
         logger.error(f"Fyers WebSocket Error: {error}")
@@ -192,7 +193,7 @@ class FeedWorker:
         if "symbol" in message:
             # Inject source for observability
             message["source"] = "ws"
-            asyncio.create_task(self._on_tick(message))
+            asyncio.run_coroutine_threadsafe(self._on_tick(message), self._loop)
 
     async def _on_tick(self, tick: dict) -> None:
         """Called on every tick. Critical path — must be fast."""
