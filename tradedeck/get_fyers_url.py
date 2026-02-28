@@ -20,9 +20,9 @@ def get_url():
     )
     
     auth_url = session.generate_authcode()
-    print("\n--- FYERS LOGIN URL ---")
-    print(auth_url)
-    print("-----------------------\n")
+    with open("fyers_url_clean.txt", "w", encoding="utf-8") as f:
+        f.write(auth_url)
+    print("\n--- FYERS LOGIN URL WRITTEN TO fyers_url_clean.txt ---")
 
 if __name__ == "__main__":
     get_url()

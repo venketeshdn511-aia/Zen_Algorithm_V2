@@ -185,7 +185,7 @@ class RiskEngine:
 
         # ── 7. LOT SIZE ────────────────────────────────────────
         max_lots = locked_row.max_lot_size if hasattr(locked_row, 'max_lot_size') else 5
-        lot_size = 50   # TODO: fetch from symbol master
+        lot_size = 65   # TODO: fetch from symbol master
         lots = quantity / lot_size
         if lots > max_lots:
             return RiskCheckResult(

@@ -97,7 +97,7 @@ class StatisticalSniper:
                 "signal": "HOLDING",
                 "ltp": ltp,
                 "pnl": ltp - entry if side == "BUY" else entry - ltp,
-                "open_qty": 50 if stage == 0 else 5, # 90% out
+                "open_qty": 65 if stage == 0 else 0, # Exited out
                 "avg_entry": entry,
                 "direction": side
             }

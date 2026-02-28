@@ -94,7 +94,7 @@ async def test_kill_switch_blocks_all_orders():
     result = await engine._evaluate(
         mock_db, mock_locked_row,
         symbol="NFO:NIFTY24200CE",
-        side="BUY", quantity=50,
+        side="BUY", quantity=65,
         order_type="LIMIT", price=150.0,
         product_type="MIS",
         idempotency_key=str(uuid.uuid4()),
@@ -136,7 +136,7 @@ async def test_idempotency_blocks_duplicate():
     result = await engine._evaluate(
         mock_db, mock_locked_row,
         symbol="NFO:NIFTY24200CE",
-        side="BUY", quantity=50,
+        side="BUY", quantity=65,
         order_type="LIMIT", price=150.0,
         product_type="MIS",
         idempotency_key=idem_key,
@@ -189,7 +189,7 @@ async def test_daily_loss_triggers_kill_switch():
     result = await engine._evaluate(
         mock_db, mock_locked_row,
         symbol="NFO:NIFTY24200CE",
-        side="BUY", quantity=50,
+        side="BUY", quantity=65,
         order_type="LIMIT", price=150.0,
         product_type="MIS",
         idempotency_key=str(uuid.uuid4()),
@@ -253,9 +253,10 @@ async def test_circuit_breaker_trips_and_fast_fails():
                     pass
 
             # Simulate state after trips
+            from datetime import timezone
             mock_state.state         = "OPEN"
             mock_state.failure_count = 3
-            mock_state.next_attempt_at = datetime(2099, 1, 1)  # Far future
+            mock_state.next_attempt_at = datetime(2099, 1, 1, tzinfo=timezone.utc)  # Far future
 
             # Next call: circuit is OPEN → should fast fail, NOT call broker
             result = await fake_broker_call(mock_db)
@@ -270,7 +271,7 @@ async def test_circuit_breaker_trips_and_fast_fails():
 @pytest.mark.asyncio
 async def test_reconciliation_corrects_position_mismatch():
     """
-    Local position says 50 qty. Broker says 0 (squareoff happened externally).
+    Local position says 65 qty. Broker says 0 (squareoff happened externally).
     Reconciliation should correct local to 0.
     """
     from app.workers.reconciliation import ReconciliationWorker
@@ -288,11 +289,11 @@ async def test_reconciliation_corrects_position_mismatch():
         session_factory=mock_session_factory,
     )
 
-    # Simulate: local has 50 qty, broker has 0
+    # Simulate: local has 65 qty, broker has 0
     broker_positions = []   # Empty = all squared off
     local_positions  = [MagicMock(
         id="pos-1", symbol="NFO:NIFTY24200CE",
-        net_quantity=50, ltp=150.0, product_type="MIS"
+        net_quantity=65, ltp=150.0, product_type="MIS"
     )]
 
     mock_db = AsyncMock()
