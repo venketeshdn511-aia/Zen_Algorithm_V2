@@ -28,27 +28,34 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure tables exist (helpful for local SQLite mode)
-    async with engine.begin() as conn:
-        # Create tables if SQLite (Auto-migration)
-        # On Postgres, we use Alembic. On SQLite, we just ensure tables exist.
-        if "sqlite" in engine.url.drivername:
+    # 1. Ensure tables exist (especially important for local SQLite on Render)
+    if "sqlite" in engine.url.drivername:
+        logger.info("Lifespan: Ensuring SQLite tables exist...")
+        async with engine.begin() as conn:
             import sqlalchemy.exc
             try:
                 await conn.run_sync(Base.metadata.create_all)
+                logger.info("Lifespan: SQLite tables verified/created.")
             except sqlalchemy.exc.OperationalError as e:
-                # Gunicorn boots multiple workers concurrently; safe to ignore if another worker won the race
-                if "already exists" not in str(e):
+                if "already exists" in str(e):
+                    logger.debug("Lifespan: Tables already exist, moving on.")
+                elif "database is locked" in str(e):
+                    logger.warning("Lifespan: Database locked during create_all; ignoring as another worker likely finished.")
+                else:
+                    logger.error(f"Lifespan: Unexpected SQLite error: {e}")
                     raise
-            
-        # Record startup
-        try:
+
+    # 2. Record system startup in audit logs
+    try:
+        async with engine.begin() as conn:
             await conn.execute(
                 text("INSERT INTO audit_logs (event_type, created_at) VALUES (:e, :ts)"),
                 {"e": "SYSTEM_STARTUP", "ts": datetime.now(timezone.utc)}
             )
-        except sqlalchemy.exc.IntegrityError:
-            pass # Ignore if another worker wrote exactly the same primary key at exactly the same microsecond
+        logger.info("Lifespan: Startup audit log recorded.")
+    except Exception as e:
+        # Don't let audit log failure crash the whole app
+        logger.warning(f"Lifespan: Could not record startup audit log: {e}")
     
     # Initialize services
     broker = BrokerService()
