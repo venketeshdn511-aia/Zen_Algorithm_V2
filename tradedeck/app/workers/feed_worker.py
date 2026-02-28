@@ -62,7 +62,7 @@ class FeedWorker:
 
         # In-process tick handlers (registered by strategies)
         self._tick_handlers = []
-        self._loop = asyncio.get_event_loop()
+        self._loop = None
 
     def register_tick_handler(self, handler):
         """Strategy executor registers here to receive live ticks."""
@@ -71,6 +71,7 @@ class FeedWorker:
     async def start(self, symbols: list[str]) -> None:
         self._running = True
         self._subscribed = set(symbols)
+        self._loop = asyncio.get_running_loop()
         self._task = asyncio.create_task(self._run(), name="feed_worker")
         logger.info("Feed worker starting. Subscribing to %d symbols.", len(symbols))
 

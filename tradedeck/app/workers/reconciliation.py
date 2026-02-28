@@ -126,15 +126,13 @@ class ReconciliationWorker:
                 return log
 
             # ── Success — reset failure counter ───────────────
-            await db.execute(
                 text(
                     "UPDATE trading_sessions SET "
-                    "reconcile_failure_count=0, last_reconcile_at=NOW(), "
-                    "last_reconcile_status='OK', updated_at=NOW() "
+                    "reconcile_failure_count=0, last_reconcile_at=:now, "
+                    "last_reconcile_status='OK', updated_at=:now "
                     "WHERE id=:id"
                 ),
-                {"id": str(session.id)}
-            )
+                {"id": str(session.id), "now": datetime.now(timezone.utc)}
 
             # ── Reconcile ──────────────────────────────────────
             pm, pc = await self._reconcile_positions(db, session, broker_positions)
@@ -208,10 +206,10 @@ class ReconciliationWorker:
                 await db.execute(
                     text(
                         "UPDATE positions SET net_quantity=:qty, broker_quantity=:bq, "
-                        "reconcile_status='CORRECTED', last_reconciled_at=NOW() "
+                        "reconcile_status='CORRECTED', last_reconciled_at=:now "
                         "WHERE id=:id"
                     ),
-                    {"qty": broker_qty, "bq": broker_qty, "id": str(pos.id)}
+                    {"qty": broker_qty, "bq": broker_qty, "id": str(pos.id), "now": datetime.now(timezone.utc)}
                 )
                 corrections.append({"symbol": pos.symbol, "action": "QTY_SYNCED", "to": broker_qty})
             else:
@@ -220,9 +218,9 @@ class ReconciliationWorker:
                 await db.execute(
                     text(
                         "UPDATE positions SET ltp=:ltp, broker_quantity=:bq, "
-                        "reconcile_status='OK', last_reconciled_at=NOW() WHERE id=:id"
+                        "reconcile_status='OK', last_reconciled_at=:now WHERE id=:id"
                     ),
-                    {"ltp": ltp, "bq": broker_qty, "id": str(pos.id)}
+                    {"ltp": ltp, "bq": broker_qty, "id": str(pos.id), "now": datetime.now(timezone.utc)}
                 )
 
         await db.flush()
@@ -300,13 +298,15 @@ class ReconciliationWorker:
         corrections = []
         broker_map  = {o["broker_order_id"]: o for o in broker_orders}
 
+        from datetime import timedelta
+        sent_cutoff = datetime.now(timezone.utc) - timedelta(seconds=60)
         result = await db.execute(
             text(
                 "SELECT id, broker_order_id, status, sent_at, created_at, status_history "
                 "FROM orders WHERE session_id=:sid AND status IN ('SENDING','ACKNOWLEDGED') "
-                "AND (sent_at IS NULL OR sent_at < NOW() - INTERVAL '60 seconds')"
+                "AND (sent_at IS NULL OR sent_at < :cutoff)"
             ),
-            {"sid": str(session.id)}
+            {"sid": str(session.id), "cutoff": sent_cutoff}
         )
         for order in result.fetchall():
             broker_order = broker_map.get(order.broker_order_id) if order.broker_order_id else None
@@ -346,11 +346,11 @@ class ReconciliationWorker:
             text(
                 "UPDATE trading_sessions SET "
                 "reconcile_failure_count = reconcile_failure_count + 1, "
-                "last_reconcile_at=NOW(), last_reconcile_status='FAILED', "
-                "updated_at=NOW() "
+                "last_reconcile_at=:now, last_reconcile_status='FAILED', "
+                "updated_at=:now "
                 "WHERE id=:id RETURNING reconcile_failure_count"
             ),
-            {"id": str(session.id)}
+            {"id": str(session.id), "now": datetime.now(timezone.utc)}
         )
         row = result.fetchone()
         return row[0] if row else 1

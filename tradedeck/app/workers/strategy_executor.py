@@ -283,10 +283,10 @@ class StrategyExecutor:
                 text(
                     "UPDATE strategy_states SET status='running', error_message=NULL, "
                     "error_trace=NULL, restart_count=restart_count+1, "
-                    "started_at=:start_time, updated_at=NOW() "
+                    "started_at=:start_time, updated_at=:now "
                     "WHERE strategy_name=:n AND status='error' RETURNING restart_count"
                 ),
-                {"n": name, "start_time": datetime.now(timezone.utc).isoformat()}
+                {"n": name, "start_time": datetime.now(timezone.utc).isoformat(), "now": datetime.now(timezone.utc)}
             )
             row = result.fetchone()
             if row:
