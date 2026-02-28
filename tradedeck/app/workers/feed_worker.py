@@ -130,7 +130,7 @@ class FeedWorker:
 
     async def _connect_and_receive(self) -> None:
         """Single connection lifetime."""
-        from fyers_apiv3.fyers_websocket import data_ws
+        from fyers_apiv3.FyersWebsocket import data_ws
 
         logger.info("Feed: connecting to Fyers WebSocket...")
         self._consecutive_failures = 0
@@ -165,7 +165,7 @@ class FeedWorker:
         self._connected = True
         # Subscribe to symbols
         if self._subscribed and hasattr(self, "_fyers"):
-            from fyers_apiv3.fyers_websocket import data_ws
+            from fyers_apiv3.FyersWebsocket import data_ws
             # Subscribe to all symbols in list
             # Note: fyers_apiv3 DataSocket usually expects a list of symbols
             self._fyers.subscribe(

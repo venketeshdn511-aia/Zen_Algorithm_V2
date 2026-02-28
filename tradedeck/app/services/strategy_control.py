@@ -231,15 +231,23 @@ class StrategyControlService:
                     except ValueError:
                         acked_at = None
 
-                if acked_at and acked_at >= intent_set_at:
-                    latency_ms = round(
-                        (acked_at - intent_set_at).total_seconds() * 1000
-                    )
-                    return {
-                        "acked": True,
-                        "latency_ms": latency_ms,
-                        "final_status": row.status,
-                    }
+                if acked_at:
+                    # Handle comparison between offset-aware (intent_set_at) and naive (SQLite)
+                    if acked_at.tzinfo is None and intent_set_at.tzinfo is not None:
+                        # Convert intent_set_at to naive UTC for safe comparison with SQLite
+                        check_set_at = intent_set_at.replace(tzinfo=None)
+                    else:
+                        check_set_at = intent_set_at
+
+                    if acked_at >= check_set_at:
+                        latency_ms = round(
+                            (acked_at - check_set_at).total_seconds() * 1000
+                        )
+                        return {
+                            "acked": True,
+                            "latency_ms": latency_ms,
+                            "final_status": row.status,
+                        }
 
         return {"acked": False, "latency_ms": None, "final_status": None}
 

@@ -141,13 +141,20 @@ class StrategyExecutor:
                 logger.error("Control loop error: %s", e, exc_info=True)
 
     async def _apply_and_ack(self, db: AsyncSession, intent_row) -> None:
+        """
+        Apply transition and acknowledge intent.
+        
+        CRITICAL: We must use the ORM object 'strategy' that was fetched in this session
+        instead of raw SQL to avoid flushing/stale data issues when mixing patterns.
+        """
         name   = intent_row.strategy_name
         intent = intent_row.control_intent
         status_map = {"pause": "paused", "resume": "running",
                       "stop": "stopped", "start": "running"}
         new_status = status_map.get(intent, "stopped")
+
         try:
-            # Use ORM for cross-dialect compatibility (handles func.now() etc)
+            # Use ORM for cross-dialect compatibility
             result = await db.execute(
                 select(StrategyState).where(StrategyState.strategy_name == name)
             )
@@ -156,6 +163,7 @@ class StrategyExecutor:
                 logger.error("Strategy '%s' not found during intent apply", name)
                 return
 
+            # Apply business logic based on intent
             if intent == "stop":
                 strategy.auto_restart = False
             elif intent in ("resume", "start"):
@@ -163,11 +171,22 @@ class StrategyExecutor:
                 strategy.started_at = func.now()
                 strategy.error_message = None
             
-            await _ctrl.executor_acknowledge_intent(db, name, new_status)
+            # Update the ORM record
+            strategy.status = new_status
+            strategy.control_intent = None # Clear the intent
+            strategy.intent_acked_at = datetime.now(timezone.utc)
+            strategy.updated_at = datetime.now(timezone.utc)
+            
+            # Update in-memory cache
             self._status_cache[name] = new_status
-            logger.info("Control ack: '%s' → %s", name, new_status)
+
+            logger.info(f"Executor acked intent '{intent}' for '{name}' -> {new_status}")
+            
+            # Flush to ensure changes are visible to the DB
+            await db.flush()
+            
         except Exception as e:
-            logger.error("Failed to apply intent '%s' on '%s': %s", intent, name, e, exc_info=True)
+            logger.error(f"Failed to apply/ack intent {intent} for {name}: {e}", exc_info=True)
 
     # ─────────────────────────────────────────────────────────────────────
     # FIX 1: SYMBOL-FILTERED TICK DISPATCH

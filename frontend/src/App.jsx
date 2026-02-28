@@ -512,7 +512,17 @@ async function apiFetch(endpoint, method = "GET", body = null) {
   };
   if (body) options.body = JSON.stringify(body);
   const res = await fetch(`${API_BASE}${endpoint}`, options);
-  if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+  if (!res.ok) {
+    let msg = res.statusText;
+    try {
+      const data = await res.json();
+      // FastAPI/Pydantic errors often in detail.message or just detail
+      msg = data.detail?.message || data.detail || msg || "Server Error";
+    } catch (e) {
+      msg = msg || `HTTP ${res.status}`;
+    }
+    throw new Error(msg);
+  }
   return res.json();
 }
 
@@ -748,13 +758,13 @@ function StratDrawer({ s, onClose, onAction }) {
         </div>
 
         <div className="da">
-{s.status === "running" && <button className="da-btn pause" onClick={() => { onAction(s, "pause"); onClose() }}>⏸ Pause</button>}
-{(s.status === "paused" || s.status === "error" || s.status === "stopped") && (
-<button className="da-btn resume" onClick={() => { onAction(s, s.status === "stopped" ? "start" : "resume"); onClose() }}>
-{s.status === "stopped" ? "▶ Start" : "▶ Resume"}
-</button>
-)}
-<button className="da-btn stop" onClick={() => { onAction(s, "stop"); onClose() }}>⛔ Stop</button>
+          {s.status === "running" && <button className="da-btn pause" onClick={() => { onAction(s, "pause"); onClose() }}>⏸ Pause</button>}
+          {(s.status === "paused" || s.status === "error" || s.status === "stopped") && (
+            <button className="da-btn resume" onClick={() => { onAction(s, s.status === "stopped" ? "start" : "resume"); onClose() }}>
+              {s.status === "stopped" ? "▶ Start" : "▶ Resume"}
+            </button>
+          )}
+          <button className="da-btn stop" onClick={() => { onAction(s, "stop"); onClose() }}>⛔ Stop</button>
         </div>
       </div>
     </div>
@@ -1094,9 +1104,15 @@ export default function App() {
     try {
       const endpoint = `/strategies/${s.name}/${action}`;
       const body = action === "stop" ? { strategy_name: s.name, confirm: true } : null;
-      await apiFetch(endpoint, "POST", body);
-      addAlert("success", `Strategy ${action}`, `Intent for ${s.name} sent.`);
-    } catch (e) { addAlert("error", "Action Failed", e.message); }
+      const res = await apiFetch(endpoint, "POST", body);
+      if (res.success === false) {
+        addAlert("warning", "Action Pending", res.message || "Intent queued but not yet confirmed.");
+      } else {
+        addAlert("success", `Strategy ${action}`, res.message || `Action successful.`);
+      }
+    } catch (e) {
+      addAlert("error", "Action Failed", e.message);
+    }
   }
 
   async function activateKill() {
