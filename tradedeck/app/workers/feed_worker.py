@@ -144,6 +144,11 @@ class FeedWorker:
         """Single connection lifetime."""
         from fyers_apiv3.FyersWebsocket import data_ws
 
+        # Wait if a token refresh is in progress
+        if not self.broker._refresh_event.is_set():
+            logger.info("Feed: Waiting for token refresh to complete before connecting...")
+            await self.broker._refresh_event.wait()
+
         logger.info("Feed: connecting to Fyers WebSocket...")
         self._consecutive_failures = 0
         self._ws_active = True
@@ -211,6 +216,8 @@ class FeedWorker:
             logger.warning("FeedWorker: Token expiry detected in WebSocket. Triggering proactive refresh...")
             # Schedule refresh in the main loop thread
             asyncio.run_coroutine_threadsafe(self.broker._refresh_access_token(), self._loop)
+            # Add a small delay to prevent immediate aggressive reconnect
+            time.sleep(2)
 
         self._ws_active = False  # Exit the _connect_and_receive loop on error
 

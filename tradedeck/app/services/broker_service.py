@@ -24,6 +24,9 @@ class BrokerService:
         self.redirect_uri = settings.FYERS_REDIRECT_URI
         
         self._on_refresh_callbacks = []
+        self._refresh_lock = asyncio.Lock()
+        self._refresh_event = asyncio.Event()
+        self._refresh_event.set() # Initially idle
         self._initialize_client()
 
     def _initialize_client(self):
@@ -40,58 +43,65 @@ class BrokerService:
         self._on_refresh_callbacks.append(callback)
 
     async def _refresh_access_token(self) -> bool:
-        """Automated token refresh using Fyers V3 SessionModel."""
-        missing = []
-        if not self.app_id: missing.append("FYERS_APP_ID")
-        if not self.secret_id: missing.append("FYERS_SECRET_ID")
-        if not self.refresh_token: missing.append("FYERS_REFRESH_TOKEN")
-        if not self.pin: missing.append("FYERS_PIN")
+        """Automated token refresh with synchronized locking."""
+        if self._refresh_lock.locked():
+            logger.info("Fyers: Refresh already in progress. Waiting...")
+            await self._refresh_event.wait()
+            return True # Assume the other one succeeded or at least finished
 
-        if missing:
-            logger.error(f"Cannot refresh token: Missing credentials: {', '.join(missing)}")
-            return False
+        async with self._refresh_lock:
+            self._refresh_event.clear()
+            missing = []
+            if not self.app_id: missing.append("FYERS_APP_ID")
+            if not self.secret_id: missing.append("FYERS_SECRET_ID")
+            if not self.refresh_token: missing.append("FYERS_REFRESH_TOKEN")
+            if not self.pin: missing.append("FYERS_PIN")
 
-        logger.info("Fyers: Attempting automated access token refresh via SessionModel...")
-        try:
-            session = fyersModel.SessionModel(
-                client_id=self.app_id,
-                secret_key=self.secret_id,
-                redirect_uri=self.redirect_uri,
-                response_type="code",
-                grant_type="refresh_token"
-            )
-            
-            # Use the official library refresh mechanism
-            response = session.refresh_token(self.refresh_token, self.pin)
-            
-            if response.get("s") == "ok":
-                new_token = response.get("access_token")
-                self.access_token = new_token
-                
-                # Re-initialize the internal client with new token
-                self._initialize_client()
-                
-                # Persist to .env locally
-                self._update_env_file(new_token)
-                logger.info("Fyers: Access token refreshed and persisted successfully.")
-                
-                # Trigger callbacks (e.g., FeedWorker restart)
-                for cb in self._on_refresh_callbacks:
-                    try:
-                        if asyncio.iscoroutinefunction(cb):
-                            asyncio.create_task(cb(new_token))
-                        else:
-                            cb(new_token)
-                    except Exception as e:
-                        logger.error(f"Error in token refresh callback: {e}")
-                            
-                return True
-            else:
-                logger.error(f"Fyers: Token refresh failed: {response}")
+            if missing:
+                logger.error(f"Cannot refresh token: Missing credentials: {', '.join(missing)}")
+                self._refresh_event.set()
                 return False
-        except Exception as e:
-            logger.error(f"Fyers: Critical error during token refresh: {repr(e)}")
-            return False
+
+            logger.info("Fyers: Attempting automated access token refresh via SessionModel...")
+            try:
+                session = fyersModel.SessionModel(
+                    client_id=self.app_id,
+                    secret_key=self.secret_id,
+                    redirect_uri=self.redirect_uri,
+                    response_type="code",
+                    grant_type="refresh_token"
+                )
+                
+                # Run library call in thread since it might be blocking despite SessionModel
+                response = await asyncio.to_thread(session.refresh_token, self.refresh_token, self.pin)
+                
+                if response.get("s") == "ok":
+                    new_token = response.get("access_token")
+                    self.access_token = new_token
+                    
+                    self._initialize_client()
+                    self._update_env_file(new_token)
+                    logger.info("Fyers: Access token refreshed and persisted successfully.")
+                    
+                    for cb in self._on_refresh_callbacks:
+                        try:
+                            if asyncio.iscoroutinefunction(cb):
+                                asyncio.create_task(cb(new_token))
+                            else:
+                                cb(new_token)
+                        except Exception as e:
+                            logger.error(f"Error in token refresh callback: {e}")
+                                
+                    self._refresh_event.set()
+                    return True
+                else:
+                    logger.error(f"Fyers: Token refresh failed: {response}")
+                    self._refresh_event.set()
+                    return False
+            except Exception as e:
+                logger.error(f"Fyers: Critical error during token refresh: {repr(e)}")
+                self._refresh_event.set()
+                return False
 
     def _update_env_file(self, new_token: str):
         """Update .env file with new access token."""
