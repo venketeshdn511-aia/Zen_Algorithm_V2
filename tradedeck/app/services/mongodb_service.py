@@ -83,3 +83,27 @@ class MongoDBService:
         except Exception as e:
             logger.error(f"Error fetching trades from MongoDB: {e}")
             return []
+
+    async def set_config(self, key: str, value: Any):
+        """Store a persistent system configuration value."""
+        if not self.enabled:
+            return
+        try:
+            await self.db.config.update_one(
+                {"key": key},
+                {"$set": {"value": value, "updated_at": datetime.now(timezone.utc)}},
+                upsert=True
+            )
+        except Exception as e:
+            logger.error(f"Error setting config '{key}' in MongoDB: {e}")
+
+    async def get_config(self, key: str) -> Optional[Any]:
+        """Retrieve a persistent system configuration value."""
+        if not self.enabled:
+            return None
+        try:
+            doc = await self.db.config.find_one({"key": key})
+            return doc["value"] if doc else None
+        except Exception as e:
+            logger.error(f"Error getting config '{key}' from MongoDB: {e}")
+            return None

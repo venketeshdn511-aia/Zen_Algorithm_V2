@@ -17,7 +17,7 @@ class BrokerError(Exception):
         super().__init__(message)
 
 class BrokerService:
-    def __init__(self):
+    def __init__(self, mongo_service: Optional["MongoDBService"] = None):
         self.app_id = settings.FYERS_APP_ID
         self.secret_id = settings.FYERS_SECRET_ID
         self.access_token = settings.FYERS_ACCESS_TOKEN
@@ -25,11 +25,14 @@ class BrokerService:
         self.pin = settings.FYERS_PIN
         self.redirect_uri = settings.FYERS_REDIRECT_URI
         
+        self.mongo = mongo_service
         self._on_refresh_callbacks = []
         self._refresh_lock = asyncio.Lock()
         self._refresh_event = asyncio.Event()
         self._refresh_event.set() # Initially idle
-        self._initialize_client()
+        
+        # We don't initialize client here because we need to sync from DB first
+        self.client = None
 
     def _initialize_client(self):
         """Initialize or re-initialize the Fyers V3 client."""
@@ -39,6 +42,21 @@ class BrokerService:
             is_async=True, 
             log_path="/tmp"
         )
+
+    async def initialize(self):
+        """Sync tokens from MongoDB and initialize client."""
+        if self.mongo:
+            db_access = await self.mongo.get_config("fyers_access_token")
+            db_refresh = await self.mongo.get_config("fyers_refresh_token")
+            
+            if db_access:
+                logger.info("[BROKER] 📥 Synced access_token from MongoDB.")
+                self.access_token = db_access
+            if db_refresh:
+                logger.info("[BROKER] 📥 Synced refresh_token from MongoDB.")
+                self.refresh_token = db_refresh
+        
+        self._initialize_client()
 
     def register_on_refresh(self, callback):
         """Register a callback to be called when the access token is refreshed."""
@@ -87,6 +105,12 @@ class BrokerService:
                     self.access_token = new_token
                     
                     self._initialize_client()
+                    
+                    # Persist new token
+                    if self.mongo:
+                        await self.mongo.set_config("fyers_access_token", new_token)
+                        logger.info("[BROKER] 💾 Persisted new access_token to MongoDB.")
+                    
                     self._update_env_file(new_token)
                     logger.info("[BROKER] ✅ Access token refreshed successfully.")
                     
@@ -151,6 +175,17 @@ class BrokerService:
             
             # Token expiry detection (Fyers V3 uses -99 or -300 codes usually)
             if response.get("s") == "error" and response.get("code") in (-99, -300, -400):
+                # Before refreshing, try to sync from DB in case another worker already did it
+                if self.mongo:
+                    db_access = await self.mongo.get_config("fyers_access_token")
+                    if db_access and db_access != self.access_token:
+                        logger.info("[BROKER] 🔄 Detected fresh token in MongoDB. Syncing...")
+                        self.access_token = db_access
+                        self._initialize_client()
+                        response = await func(*args, **kwargs)
+                        if response.get("s") == "ok":
+                            return response
+
                 logger.warning(f"[BROKER] 🔑 Token expired (code {response.get('code')}). Triggering refresh...")
                 if await self._refresh_access_token():
                     # Retry once

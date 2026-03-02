@@ -97,10 +97,15 @@ async def lifespan(app: FastAPI):
         logger.warning(f"[SYSTEM] ⚠️ Could not record startup audit log: {e}")
     
     # Initialize services
-    broker = BrokerService()
-    risk = RiskEngine(broker)
     notifier = NotificationService(settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID)
     mongo = MongoDBService(settings.MONGO_URI)
+    await mongo.connect() # Connect MongoDB early as BrokerService might need it
+    
+    # Initialize broker with mongo and call .initialize() to sync tokens
+    broker = BrokerService(mongo_service=mongo)
+    await broker.initialize()
+
+    risk = RiskEngine(broker)
     reporting = StrategyReportingService(async_session, mongo_service=mongo)
     
     # Initialize Workers
