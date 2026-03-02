@@ -63,6 +63,15 @@ class FeedWorker:
         # In-process tick handlers (registered by strategies)
         self._tick_handlers = []
         self._loop = None
+        self._ws_active = False
+
+        # Register for token refreshes
+        self.broker.register_on_refresh(self._handle_token_refresh)
+
+    def _handle_token_refresh(self, new_token: str):
+        """Callback from BrokerService when token changes."""
+        logger.info("FeedWorker: Token refresh detected. Signaling WS restart...")
+        self._ws_active = False
 
     def register_tick_handler(self, handler):
         """Strategy executor registers here to receive live ticks."""
@@ -137,16 +146,18 @@ class FeedWorker:
 
         logger.info("Feed: connecting to Fyers WebSocket...")
         self._consecutive_failures = 0
+        self._ws_active = True
 
         access_token = f"{self.broker.app_id}:{self.broker.access_token}"
         
         # Initialize the Fyers DataSocket
+        # Set reconnect=False to handle it ourselves with the latest token
         self._fyers = data_ws.FyersDataSocket(
             access_token=access_token,
             log_path=os.getcwd(),
             litemode=False,
             write_to_file=False,
-            reconnect=True,
+            reconnect=False,
             on_connect=self._on_ws_open,
             on_close=self._on_ws_close,
             on_error=self._on_ws_error,
@@ -155,9 +166,9 @@ class FeedWorker:
 
         self._fyers.connect()
         
-        # Keep the coroutine alive while running
-        while self._running:
-            await asyncio.sleep(1)
+        # Keep the coroutine alive while connection is active
+        while self._running and self._ws_active:
+            await asyncio.sleep(0.5)
         
         if hasattr(self, "_fyers"):
             # self._fyers.close() # Library usually handles this via reconnect=True
@@ -182,10 +193,12 @@ class FeedWorker:
     def _on_ws_close(self):
         logger.warning("Fyers WebSocket Connection Closed")
         self._connected = False
+        self._ws_active = False  # Exit the _connect_and_receive loop to trigger reconnect
         asyncio.run_coroutine_threadsafe(self._mark_disconnected(), self._loop)
 
     def _on_ws_error(self, error):
         logger.error(f"Fyers WebSocket Error: {error}")
+        self._ws_active = False  # Exit the _connect_and_receive loop on error
 
     def _on_ws_message(self, message):
         """Handle incoming WebSocket messages."""

@@ -24,7 +24,12 @@ class BrokerService:
         self.pin = settings.FYERS_PIN
         
         self.base_url = "https://api.fyers.in/api/v2"
+        self._on_refresh_callbacks = []
         self._update_headers()
+
+    def register_on_refresh(self, callback):
+        """Register a callback to be called when the access token is refreshed."""
+        self._on_refresh_callbacks.append(callback)
 
     def _update_headers(self):
         self.headers = {
@@ -69,6 +74,17 @@ class BrokerService:
                     # Persist to .env locally
                     self._update_env_file(new_token)
                     logger.info("Fyers: Access token refreshed and persisted successfully.")
+                    
+                    # Trigger callbacks
+                    for cb in self._on_refresh_callbacks:
+                        try:
+                            if asyncio.iscoroutinefunction(cb):
+                                asyncio.create_task(cb(new_token))
+                            else:
+                                cb(new_token)
+                        except Exception as e:
+                            logger.error(f"Error in token refresh callback: {e}")
+                            
                     return True
                 else:
                     logger.error(f"Fyers: Token refresh failed: {data}")
@@ -139,7 +155,7 @@ class BrokerService:
             except BrokerError:
                 raise
             except Exception as e:
-                logger.error(f"Fyers Request Error ({method} {path}): {e}")
+                logger.error(f"Fyers Request Error ({method} {path}): {repr(e)}")
                 raise
 
     async def get_funds(self) -> Dict[str, Any]:
@@ -199,3 +215,12 @@ class BrokerService:
     async def submit_order(self, order_data: Dict[str, Any]) -> Dict[str, Any]:
         """Place an order with Fyers."""
         return await self._request("POST", "/orders", json=order_data, timeout=5.0)
+
+    async def get_history(self, symbol: str, resolution: str, range_from: str, range_to: str) -> Dict[str, Any]:
+        """
+        Fetch historical candles.
+        range_from/to: YYYY-MM-DD
+        resolution: 1, 5, 15, 30, 60, D, W, M
+        """
+        path = f"/history?symbol={symbol}&resolution={resolution}&date_format=1&range_from={range_from}&range_to={range_to}&cont_flag=1"
+        return await self._request("GET", path, timeout=10.0)
