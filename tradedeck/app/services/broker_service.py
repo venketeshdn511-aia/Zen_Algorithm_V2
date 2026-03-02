@@ -1,6 +1,8 @@
 import logging
 import os
 import asyncio
+import hashlib
+import httpx
 from typing import Dict, Any, Optional
 from fyers_apiv3 import fyersModel
 
@@ -43,11 +45,11 @@ class BrokerService:
         self._on_refresh_callbacks.append(callback)
 
     async def _refresh_access_token(self) -> bool:
-        """Automated token refresh with synchronized locking."""
+        """Automated token refresh using manual V3 validation (robust)."""
         if self._refresh_lock.locked():
-            logger.info("Fyers: Refresh already in progress. Waiting...")
+            logger.info("[BROKER] ⏳ Refresh already in progress. Waiting...")
             await self._refresh_event.wait()
-            return True # Assume the other one succeeded or at least finished
+            return True
 
         async with self._refresh_lock:
             self._refresh_event.clear()
@@ -58,30 +60,35 @@ class BrokerService:
             if not self.pin: missing.append("FYERS_PIN")
 
             if missing:
-                logger.error(f"Cannot refresh token: Missing credentials: {', '.join(missing)}")
+                logger.error(f"[BROKER] ❌ Cannot refresh: Missing {', '.join(missing)}")
                 self._refresh_event.set()
                 return False
 
-            logger.info("Fyers: Attempting automated access token refresh via SessionModel...")
+            logger.info("[BROKER] 🔄 Starting automated token refresh...")
             try:
-                session = fyersModel.SessionModel(
-                    client_id=self.app_id,
-                    secret_key=self.secret_id,
-                    redirect_uri=self.redirect_uri,
-                    response_type="code",
-                    grant_type="refresh_token"
-                )
+                # V3 manual refresh logic (most reliable)
+                hash_input = f"{self.app_id}:{self.secret_id}"
+                app_id_hash = hashlib.sha256(hash_input.encode()).hexdigest()
+
+                payload = {
+                    "grant_type": "refresh_token",
+                    "appIdHash": app_id_hash,
+                    "refresh_token": self.refresh_token,
+                    "pin": self.pin
+                }
                 
-                # Run library call in thread since it might be blocking despite SessionModel
-                response = await asyncio.to_thread(session.refresh_token, self.refresh_token, self.pin)
+                url = "https://api-t1.fyers.in/api/v3/validate-refresh-token"
+                async with httpx.AsyncClient() as client:
+                    res = await client.post(url, json=payload, timeout=15.0)
+                    data = res.json()
                 
-                if response.get("s") == "ok":
-                    new_token = response.get("access_token")
+                if data.get("s") == "ok":
+                    new_token = data.get("access_token")
                     self.access_token = new_token
                     
                     self._initialize_client()
                     self._update_env_file(new_token)
-                    logger.info("Fyers: Access token refreshed and persisted successfully.")
+                    logger.info("[BROKER] ✅ Access token refreshed successfully.")
                     
                     for cb in self._on_refresh_callbacks:
                         try:
@@ -90,16 +97,16 @@ class BrokerService:
                             else:
                                 cb(new_token)
                         except Exception as e:
-                            logger.error(f"Error in token refresh callback: {e}")
+                            logger.error(f"[BROKER] ⚠️ Callback error: {e}")
                                 
                     self._refresh_event.set()
                     return True
                 else:
-                    logger.error(f"Fyers: Token refresh failed: {response}")
+                    logger.error(f"[BROKER] ❌ Refresh failed: {data}")
                     self._refresh_event.set()
                     return False
             except Exception as e:
-                logger.error(f"Fyers: Critical error during token refresh: {repr(e)}")
+                logger.error(f"[BROKER] 🛑 Critical refresh error: {repr(e)}")
                 self._refresh_event.set()
                 return False
 
@@ -144,12 +151,12 @@ class BrokerService:
             
             # Token expiry detection (Fyers V3 uses -99 or -300 codes usually)
             if response.get("s") == "error" and response.get("code") in (-99, -300, -400):
-                logger.warning(f"Fyers: Token expiry/error detected ({response.get('code')}). Refreshing...")
+                logger.warning(f"[BROKER] 🔑 Token expired (code {response.get('code')}). Triggering refresh...")
                 if await self._refresh_access_token():
                     # Retry once
                     response = await func(*args, **kwargs)
                 else:
-                    raise BrokerError("AUTH_FAILED", "Token refresh failed")
+                    raise BrokerError("AUTH_FAILED", "Sync refresh failed")
             
             if response.get("s") != "ok":
                 raise BrokerError(str(response.get("code", "ERROR")), response.get("message", "API Request Failed"))
@@ -158,7 +165,7 @@ class BrokerService:
         except BrokerError:
             raise
         except Exception as e:
-            logger.error(f"Fyers API Exception: {repr(e)}")
+            logger.error(f"[BROKER] 🛑 API Error: {repr(e)}")
             raise
 
     async def get_funds(self) -> Dict[str, Any]:

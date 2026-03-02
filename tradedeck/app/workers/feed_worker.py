@@ -70,7 +70,7 @@ class FeedWorker:
 
     def _handle_token_refresh(self, new_token: str):
         """Callback from BrokerService when token changes."""
-        logger.info("FeedWorker: Token refresh detected. Signaling WS restart...")
+        logger.info("[FEED] 🔄 Token refresh detected. Signaling WebSocket restart...")
         self._ws_active = False
 
     def register_tick_handler(self, handler):
@@ -82,7 +82,7 @@ class FeedWorker:
         self._subscribed = set(symbols)
         self._loop = asyncio.get_running_loop()
         self._task = asyncio.create_task(self._run(), name="feed_worker")
-        logger.info("Feed worker starting. Subscribing to %d symbols.", len(symbols))
+        logger.info("[FEED] 🚀 Worker starting. Subscribing to %d symbols.", len(symbols))
 
     async def stop(self) -> None:
         self._running = False
@@ -139,7 +139,7 @@ class FeedWorker:
 
                 delay = RECONNECT_DELAYS[min(delay_idx, len(RECONNECT_DELAYS)-1)]
                 delay_idx += 1
-                logger.info("Feed reconnecting in %ds...", delay)
+                logger.info("[FEED] ⏳ Retrying in %ds...", delay)
                 await asyncio.sleep(delay)
 
     async def _connect_and_receive(self) -> None:
@@ -148,10 +148,10 @@ class FeedWorker:
 
         # Wait if a token refresh is in progress
         if not self.broker._refresh_event.is_set():
-            logger.info("Feed: Waiting for token refresh to complete before connecting...")
+            logger.info("[FEED] ⏳ Waiting for broker refresh to complete...")
             await self.broker._refresh_event.wait()
 
-        logger.info("Feed: connecting to Fyers WebSocket...")
+        logger.info("[FEED] 📡 Connecting to Fyers WebSocket...")
         self._consecutive_failures = 0
         self._ws_active = True
 
@@ -204,7 +204,7 @@ class FeedWorker:
         asyncio.run_coroutine_threadsafe(self._mark_disconnected(), self._loop)
 
     def _on_ws_error(self, error):
-        logger.error(f"Fyers WebSocket Error: {error}")
+        logger.error(f"[FEED] 🛑 WebSocket Error: {error}")
         
         # Proactive Refresh on Token Expiry (-99 is Fyers' WebSocket auth error code)
         is_expired = False
@@ -215,7 +215,7 @@ class FeedWorker:
             is_expired = True
             
         if is_expired:
-            logger.warning("FeedWorker: Token expiry detected in WebSocket. Triggering proactive refresh...")
+            logger.warning("[FEED] 🔑 Token expired. Triggering proactive refresh...")
             # Schedule refresh in the main loop thread
             asyncio.run_coroutine_threadsafe(self.broker._refresh_access_token(), self._loop)
             # Add a small delay to prevent immediate aggressive reconnect
