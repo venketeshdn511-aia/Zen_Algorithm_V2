@@ -1,9 +1,10 @@
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
-from sqlalchemy import text
+from sqlalchemy import text, select
 
 from app.api.routes import health
 from app.models.db import Base
@@ -130,7 +131,7 @@ async def lifespan(app: FastAPI):
     app.state.feed = feed
     app.state.broker = broker
     
-    logger.info("Bot components initialized and background tasks started")
+    logger.info("[SYSTEM] ⚙️ Bot components initialized and background tasks started.")
     
     yield
     
@@ -140,7 +141,7 @@ async def lifespan(app: FastAPI):
     await feed.stop()
     await executor.stop()
     await reconciler.stop()
-    logger.info("Bot components shut down")
+    logger.info("[SYSTEM] 🛑 Bot components shut down.")
 
 app = FastAPI(
     title="TradeDeck v2 Bot",

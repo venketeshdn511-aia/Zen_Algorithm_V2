@@ -93,7 +93,7 @@ class FeedWorker:
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
         await self._mark_disconnected()
-        logger.info("Feed worker stopped.")
+        logger.info("[FEED] 🛑 Feed worker stopped.")
 
     async def get_feed_status(self) -> dict:
         """Return current feed health. Used by health endpoint directly."""
@@ -181,7 +181,7 @@ class FeedWorker:
             pass
 
     def _on_ws_open(self):
-        logger.info("Fyers WebSocket Connection Opened")
+        logger.info("[FEED] ✅ Fyers WebSocket Connection Opened")
         self._connected = True
         # Subscribe to symbols
         if self._subscribed and hasattr(self, "_fyers"):
