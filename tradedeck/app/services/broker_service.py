@@ -117,7 +117,6 @@ class BrokerService:
             possible_paths = [
                 os.path.join(os.getcwd(), ".env"),
                 os.path.join(os.path.dirname(os.getcwd()), ".env"),
-                # Absolute path for this specific user setup as fallback
                 r"c:\Users\Vinay\OneDrive\Desktop\Algo Trading\tradedeck-v2-production\tradedeck\.env"
             ]
             
@@ -128,10 +127,11 @@ class BrokerService:
                     break
             
             if not env_path:
-                logger.warning("Fyers: .env not found, skipping persistence.")
+                # Noisy on Render, only log once if needed or keep it quiet
+                logger.debug("[BROKER] ℹ️ .env not found, skipping persistence (expected on Render).")
                 return
 
-            logger.info(f"Fyers: Updating .env at {env_path}")
+            logger.info(f"[BROKER] 💾 Updating .env at {env_path}")
             with open(env_path, "r") as f:
                 lines = f.readlines()
 
@@ -142,7 +142,7 @@ class BrokerService:
                     else:
                         f.write(line)
         except Exception as e:
-            logger.error(f"Failed to update .env: {e}")
+            logger.error(f"[BROKER] ⚠️ Failed to update .env: {e}")
 
     async def _api_call(self, func, *args, **kwargs) -> Dict[str, Any]:
         """Wrapper for Fyers library calls with auto-refresh on 401."""
@@ -228,6 +228,7 @@ class BrokerService:
 
     async def get_history(self, symbol: str, resolution: str, range_from: str, range_to: str) -> Dict[str, Any]:
         """Fetch historical candles (V3)."""
+        logger.info(f"[BROKER] 📊 Fetching history for {symbol} ({resolution})...")
         payload = {
             "symbol": symbol,
             "resolution": resolution,

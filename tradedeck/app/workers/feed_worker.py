@@ -125,11 +125,10 @@ class FeedWorker:
                 await asyncio.sleep(1.0)
             except asyncio.CancelledError:
                 break
-            except Exception as e:
                 self._consecutive_failures += 1
                 self._reconnect_count      += 1
                 logger.error(
-                    "Feed connection lost (failure #%d): %s",
+                    "[FEED] 🛑 Connection lost (failure #%d): %s",
                     self._consecutive_failures, e
                 )
                 await self._mark_disconnected()
@@ -198,7 +197,7 @@ class FeedWorker:
             asyncio.run_coroutine_threadsafe(self._mark_connected(), self._loop)
 
     def _on_ws_close(self):
-        logger.warning("Fyers WebSocket Connection Closed")
+        logger.warning("[FEED] 🔌 WebSocket Connection Closed")
         self._connected = False
         self._ws_active = False  # Exit the _connect_and_receive loop to trigger reconnect
         asyncio.run_coroutine_threadsafe(self._mark_disconnected(), self._loop)
