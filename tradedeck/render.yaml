@@ -16,6 +16,8 @@ services:
         value: "1"
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: WEB_CONCURRENCY
+        value: "1"
       - fromGroup: tradedeck-secrets
 
 envVarGroups:

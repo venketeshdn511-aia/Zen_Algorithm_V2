@@ -121,6 +121,8 @@ class FeedWorker:
             try:
                 await self._connect_and_receive()
                 delay_idx = 0  # Reset backoff on clean exit
+                # Added delay to prevent tight loop even on manual signals
+                await asyncio.sleep(1.0)
             except asyncio.CancelledError:
                 break
             except Exception as e:
