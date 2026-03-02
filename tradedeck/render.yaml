@@ -31,6 +31,8 @@ envVarGroups:
         sync: false
       - key: FYERS_REFRESH_TOKEN
         sync: false
+      - key: FYERS_PIN
+        sync: false
       - key: MONGO_URI
         sync: false
       - key: TELEGRAM_BOT_TOKEN

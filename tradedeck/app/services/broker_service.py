@@ -5,6 +5,8 @@ import hashlib
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 class BrokerError(Exception):
@@ -15,11 +17,11 @@ class BrokerError(Exception):
 
 class BrokerService:
     def __init__(self):
-        self.app_id = os.getenv("FYERS_APP_ID")
-        self.secret_id = os.getenv("FYERS_SECRET_ID")
-        self.access_token = os.getenv("FYERS_ACCESS_TOKEN")
-        self.refresh_token = os.getenv("FYERS_REFRESH_TOKEN")
-        self.pin = os.getenv("FYERS_PIN")
+        self.app_id = settings.FYERS_APP_ID
+        self.secret_id = settings.FYERS_SECRET_ID
+        self.access_token = settings.FYERS_ACCESS_TOKEN
+        self.refresh_token = settings.FYERS_REFRESH_TOKEN
+        self.pin = settings.FYERS_PIN
         
         self.base_url = "https://api.fyers.in/api/v2"
         self._update_headers()
@@ -32,8 +34,14 @@ class BrokerService:
 
     async def _refresh_access_token(self) -> bool:
         """Automated token refresh using refresh_token (Fyers v3)."""
-        if not all([self.app_id, self.secret_id, self.refresh_token, self.pin]):
-            logger.error("Cannot refresh token: Missing credentials in .env")
+        missing = []
+        if not self.app_id: missing.append("FYERS_APP_ID")
+        if not self.secret_id: missing.append("FYERS_SECRET_ID")
+        if not self.refresh_token: missing.append("FYERS_REFRESH_TOKEN")
+        if not self.pin: missing.append("FYERS_PIN")
+
+        if missing:
+            logger.error(f"Cannot refresh token: Missing credentials: {', '.join(missing)}")
             return False
 
         logger.info("Fyers: Attempting automated access token refresh...")

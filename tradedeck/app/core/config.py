@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     FYERS_SECRET_ID: Optional[str] = None
     FYERS_REDIRECT_URI: str = "http://127.0.0.1:8080"
     FYERS_ACCESS_TOKEN: Optional[str] = None
+    FYERS_REFRESH_TOKEN: Optional[str] = None
+    FYERS_PIN: Optional[str] = None
     
     MONGO_URI: Optional[str] = None
     
