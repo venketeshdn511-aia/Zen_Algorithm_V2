@@ -11,6 +11,7 @@ Critical fix from v1:
 import asyncio
 import logging
 import time
+import json
 from datetime import datetime, date, timezone
 from typing import Optional
 
@@ -243,12 +244,11 @@ class ReconciliationWorker:
         }
         terminal = {"FILLED", "CANCELLED", "REJECTED", "EXPIRED", "RISK_REJECTED"}
 
+        from sqlalchemy import select
         result = await db.execute(
-            text(
-                "SELECT id, broker_order_id, status, status_history, filled_quantity "
-                "FROM orders WHERE session_id=:sid AND status NOT IN :terminal"
-            ),
-            {"sid": str(session.id), "terminal": tuple(terminal)}
+            select(Order.id, Order.broker_order_id, Order.status, Order.status_history, Order.filled_quantity)
+            .where(Order.session_id == str(session.id))
+            .where(Order.status.not_in(terminal))
         )
         for order in result.fetchall():
             if not order.broker_order_id:
@@ -275,15 +275,16 @@ class ReconciliationWorker:
                 await db.execute(
                     text(
                         "UPDATE orders SET status=:s, filled_quantity=:fq, "
-                        "avg_fill_price=:ap, status_history=:h::jsonb, updated_at=NOW() "
+                        "avg_fill_price=:ap, status_history=:h, updated_at=:now "
                         "WHERE id=:id"
                     ),
                     {
                         "s":  target_status,
                         "fq": broker_order["filled_qty"],
                         "ap": broker_order["avg_price"],
-                        "h":  str(history).replace("'", '"'),
+                        "h":  json.dumps(history),
                         "id": str(order.id),
+                        "now": datetime.now(timezone.utc)
                     }
                 )
                 corrections.append({"order_id": str(order.id), "action": f"STATUS→{target_status}"})
@@ -322,14 +323,15 @@ class ReconciliationWorker:
             }]
             await db.execute(
                 text(
-                    "UPDATE orders SET status=:s, status_history=:h::jsonb, "
-                    "reject_reason=:r, updated_at=NOW() WHERE id=:id"
+                    "UPDATE orders SET status=:s, status_history=:h, "
+                    "reject_reason=:r, updated_at=:now WHERE id=:id"
                 ),
                 {
                     "s":  resolved,
-                    "h":  str(history).replace("'", '"'),
+                    "h":  json.dumps(history),
                     "r":  "Recovered from orphaned state by reconciliation",
                     "id": str(order.id),
+                    "now": datetime.now(timezone.utc)
                 }
             )
             corrections.append({"order_id": str(order.id), "action": f"ORPHAN→{resolved}"})
