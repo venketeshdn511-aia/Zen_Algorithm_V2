@@ -198,6 +198,20 @@ class FeedWorker:
 
     def _on_ws_error(self, error):
         logger.error(f"Fyers WebSocket Error: {error}")
+        
+        # Proactive Refresh on Token Expiry (-99 is Fyers' WebSocket auth error code)
+        is_expired = False
+        if isinstance(error, dict):
+            if error.get("code") == -99 or "expired" in str(error.get("message", "")).lower():
+                is_expired = True
+        elif "expired" in str(error).lower():
+            is_expired = True
+            
+        if is_expired:
+            logger.warning("FeedWorker: Token expiry detected in WebSocket. Triggering proactive refresh...")
+            # Schedule refresh in the main loop thread
+            asyncio.run_coroutine_threadsafe(self.broker._refresh_access_token(), self._loop)
+
         self._ws_active = False  # Exit the _connect_and_receive loop on error
 
     def _on_ws_message(self, message):
