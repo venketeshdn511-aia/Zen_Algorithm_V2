@@ -90,17 +90,26 @@ class OptionsService:
             
         # Sort and pick the nearest expiry date
         nearest_expiry = sorted(valid_expiries)[0]
+        expiry_dt = datetime.fromtimestamp(nearest_expiry)
         
-        # Filter for the target Expiry and Strike
-        target_options = df_filtered[(df_filtered["ExpiryDate"] == nearest_expiry) & (df_filtered["StrikePrice"] == atm_strike)]
+        # Filter for the target Expiry
+        expiry_df = df_filtered[df_filtered["ExpiryDate"] == nearest_expiry].copy()
+        
+        # Robust strike matching: round both to avoid precision issues
+        expiry_df["StrikePrice"] = expiry_df["StrikePrice"].astype(float).round(0).astype(int)
+        
+        target_options = expiry_df[expiry_df["StrikePrice"] == atm_strike]
         
         if target_options.empty:
-            logger.error(f"OptionsService: No exact match found for Expiry {nearest_expiry}, Strike {atm_strike} {option_type}")
+            found_strikes = sorted(expiry_df["StrikePrice"].unique())
+            logger.error(
+                f"OptionsService: No exact match for Expiry {expiry_dt} ({nearest_expiry}), Strike {atm_strike} {option_type}. "
+                f"Found {len(found_strikes)} strikes in this expiry. Range: {min(found_strikes) if found_strikes else 'N/A'} - {max(found_strikes) if found_strikes else 'N/A'}"
+            )
             # Fallback: Find closest strike available
-            nearest_options = df_filtered[df_filtered["ExpiryDate"] == nearest_expiry].copy()
-            nearest_options['StrikeDiff'] = abs(nearest_options['StrikePrice'] - atm_strike)
-            if not nearest_options.empty:
-                closest = nearest_options.sort_values('StrikeDiff').iloc[0]
+            expiry_df['StrikeDiff'] = abs(expiry_df['StrikePrice'] - atm_strike)
+            if not expiry_df.empty:
+                closest = expiry_df.sort_values('StrikeDiff').iloc[0]
                 logger.warning(f"OptionsService: Falling back to closest strike {closest['StrikePrice']} instead of target {atm_strike}")
                 return closest["SymbolTicker"]
             return None

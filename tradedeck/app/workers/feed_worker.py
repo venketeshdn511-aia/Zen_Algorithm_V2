@@ -227,8 +227,11 @@ class FeedWorker:
         # Translate Fyers message to internal tick format
         # message is usually a dict for LTP/Depth
         if "symbol" in message:
-            # Inject source for observability
+            # Inject source and timestamp for observability and strategy consumption
             message["source"] = "ws"
+            if "ts" not in message:
+                message["ts"] = datetime.now(timezone.utc).isoformat()
+            
             asyncio.run_coroutine_threadsafe(self._on_tick(message), self._loop)
 
     async def _on_tick(self, tick: dict) -> None:

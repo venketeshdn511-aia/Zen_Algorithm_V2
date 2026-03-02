@@ -30,33 +30,70 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # 1. Ensure tables exist (especially important for local SQLite on Render)
     if "sqlite" in engine.url.drivername:
-        logger.info("Lifespan: Ensuring SQLite tables exist...")
+        logger.info("[SYSTEM] 🛠️ Ensuring SQLite tables exist...")
         async with engine.begin() as conn:
             import sqlalchemy.exc
             try:
+                # Explicit table creation for audit_logs to fix missing table error on some SQLite versions
+                await conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS audit_logs (
+                        id VARCHAR(60) PRIMARY KEY,
+                        session_id VARCHAR(60),
+                        event_type VARCHAR(60) NOT NULL,
+                        entity_type VARCHAR(30),
+                        entity_id VARCHAR(100),
+                        actor VARCHAR(100),
+                        ip_address VARCHAR(45),
+                        payload JSON,
+                        created_at DATETIME NOT NULL
+                    )
+                """))
                 await conn.run_sync(Base.metadata.create_all)
-                logger.info("Lifespan: SQLite tables verified/created.")
+                logger.info("[SYSTEM] ✅ SQLite tables verified/created.")
             except sqlalchemy.exc.OperationalError as e:
                 if "already exists" in str(e):
-                    logger.debug("Lifespan: Tables already exist, moving on.")
+                    logger.debug("[SYSTEM] ℹ️ Tables already exist.")
                 elif "database is locked" in str(e):
-                    logger.warning("Lifespan: Database locked during create_all; ignoring as another worker likely finished.")
+                    logger.warning("[SYSTEM] ⚠️ Database locked during create_all.")
                 else:
-                    logger.error(f"Lifespan: Unexpected SQLite error: {e}")
+                    logger.error(f"[SYSTEM] 🛑 Unexpected SQLite error: {e}")
                     raise
 
-    # 2. Record system startup in audit logs
+    # 2. Ensure TradingSession for today exists
+    from datetime import date
+    from app.models.db import TradingSession
     try:
-        import uuid
+        today = date.today().isoformat()
+        async with async_session() as db:
+            result = await db.execute(select(TradingSession).where(TradingSession.date == today))
+            session_obj = result.scalar_one_or_none()
+            if not session_obj:
+                logger.info(f"[SYSTEM] 📅 Creating new TradingSession for {today}")
+                new_session = TradingSession(
+                    date=today,
+                    id=str(uuid.uuid4()),
+                    max_daily_loss=10000.0,
+                    max_position_size=100,
+                    max_open_orders=20,
+                    max_margin_usage_pct=80.0
+                )
+                db.add(new_session)
+                await db.commit()
+            else:
+                logger.info(f"[SYSTEM] 📅 Active TradingSession found for {today}")
+    except Exception as e:
+        logger.error(f"[SYSTEM] 🛑 Failed to ensure TradingSession: {e}")
+
+    # 3. Record system startup in audit logs
+    try:
         async with engine.begin() as conn:
             await conn.execute(
                 text("INSERT INTO audit_logs (id, event_type, created_at) VALUES (:i, :e, :ts)"),
                 {"i": str(uuid.uuid4()), "e": "SYSTEM_STARTUP", "ts": datetime.now(timezone.utc)}
             )
-        logger.info("Lifespan: Startup audit log recorded.")
+        logger.info("[SYSTEM] 📝 Startup audit log recorded.")
     except Exception as e:
-        # Don't let audit log failure crash the whole app
-        logger.warning(f"Lifespan: Could not record startup audit log: {e}")
+        logger.warning(f"[SYSTEM] ⚠️ Could not record startup audit log: {e}")
     
     # Initialize services
     broker = BrokerService()

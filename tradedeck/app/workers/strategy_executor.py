@@ -26,7 +26,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.services.strategy_control import StrategyControlService
-from app.models.db import StrategyState
+from app.models.db import (
+    StrategyState, TradingSession, Order, OrderStatus, 
+    ProductType, OrderType, OrderSide
+)
 from app.services.options_service import options_service
 
 logger = logging.getLogger(__name__)
@@ -167,8 +170,7 @@ class StrategyExecutor:
             if intent == "stop":
                 strategy.auto_restart = False
             elif intent in ("resume", "start"):
-                from sqlalchemy.sql import func
-                strategy.started_at = func.now()
+                strategy.started_at = datetime.now(timezone.utc)
                 strategy.error_message = None
             
             # Update the ORM record
@@ -341,19 +343,18 @@ class StrategyExecutor:
                 
                 # 2. Get active TradingSession
                 from datetime import date
-                from app.models.db import TradingSession, Order, OrderStatus
                 import uuid
                 today = date.today().isoformat()
                 ts_query = await db.execute(select(TradingSession).where(TradingSession.date == today))
                 session_obj = ts_query.scalar_one_or_none()
                 
                 if not session_obj:
-                    logger.error(f"Cannot execute {new_sig} for {name}: No Active TradingSession found for {today}")
-                    asyncio.create_task(self.notifier.send_message(f"⚠️ *ERROR*: Strategy `{name}` triggered {new_sig} but no active `TradingSession` exists for today."))
+                    logger.error(f"[BROKER] 🛑 Cannot execute {new_sig} for {name}: No Active TradingSession found for {today}")
+                    if self.notifier:
+                        asyncio.create_task(self.notifier.send_message(f"⚠️ *ERROR*: Strategy `{name}` triggered {new_sig} but no active `TradingSession` exists for today."))
                 else:
                     idempotency_key = f"{name}_{new_sig}_{datetime.now(timezone.utc).strftime('%H%M%S')}_{str(uuid.uuid4())[:8]}"
                     # 3. Call RiskEngine
-                    from app.models.db import ProductType, OrderType, OrderSide
                     db_side = OrderSide.BUY if new_sig == "BUY" else OrderSide.SELL
                     risk_result = await self.risk.validate_order(
                         db=db,
@@ -467,15 +468,15 @@ class StrategyExecutor:
                     
                 # 2. Get active TradingSession
                 from datetime import date
-                from app.models.db import TradingSession, Order, OrderStatus, ProductType, OrderType
                 import uuid
                 today = date.today().isoformat()
                 ts_query = await db.execute(select(TradingSession).where(TradingSession.date == today))
                 session_obj = ts_query.scalar_one_or_none()
                 
                 if not session_obj:
-                    logger.error(f"Cannot execute {new_sig} for {name}: No Active TradingSession found for {today}")
-                    asyncio.create_task(self.notifier.send_message(f"⚠️ *ERROR*: Strategy `{name}` triggered {new_sig} but no active `TradingSession` exists for today."))
+                    logger.error(f"[BROKER] 🛑 Cannot execute {new_sig} for {name}: No Active TradingSession found for {today}")
+                    if self.notifier:
+                        asyncio.create_task(self.notifier.send_message(f"⚠️ *ERROR*: Strategy `{name}` triggered {new_sig} but no active `TradingSession` exists for today."))
                 else:
                     idempotency_key = f"{name}_{new_sig}_{datetime.now(timezone.utc).strftime('%H%M%S')}_{str(uuid.uuid4())[:8]}"
                     # 3. Call RiskEngine
