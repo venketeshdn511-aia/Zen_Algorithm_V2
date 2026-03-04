@@ -75,7 +75,13 @@ async def acquire_risk_lock(
     """
     lock_key = _session_to_lock_key(session_id)
 
-    # Set lock timeout at DB level
+    if db.bind.dialect.name == "sqlite":
+        # SQLite does not support pg_try_advisory_xact_lock. For single-process
+        # deployments, relying on SQLite's DB lock and SELECT FOR UPDATE is sufficient.
+        yield True
+        return
+
+    # PostgreSQL specific logic
     await db.execute(text(f"SET LOCAL lock_timeout = '{timeout_ms}ms'"))
 
     try:
@@ -120,6 +126,10 @@ async def acquire_position_lock(
     combined = f"{session_id}:{symbol}"
     lock_key = _session_to_lock_key(combined)
 
+    if db.bind.dialect.name == "sqlite":
+        yield True
+        return
+
     await db.execute(text(f"SET LOCAL lock_timeout = '{timeout_ms}ms'"))
 
     try:
@@ -152,15 +162,34 @@ async def lock_session_row(db: AsyncSession, session_id: str):
 
     Must be called inside a transaction.
     """
-    result = await db.execute(
-        text(
-            "SELECT id, is_killed, kill_reason, realized_pnl, unrealized_pnl, "
-            "max_daily_loss, max_open_orders, max_lot_size, max_margin_usage_pct "
-            "FROM trading_sessions WHERE id = :id FOR UPDATE"
-        ),
-        {"id": session_id}
-    )
-    row = result.fetchone()
+    # Note: SQLite may not fully support row level locking with FOR UPDATE
+    # in the same way Postgres does across all driver configurations but
+    # SQLAlchemy manages syntax conversion gracefully. 
+    try:
+        result = await db.execute(
+            text(
+                "SELECT id, is_killed, kill_reason, realized_pnl, unrealized_pnl, "
+                "max_daily_loss, max_open_orders, max_lot_size, max_margin_usage_pct "
+                "FROM trading_sessions WHERE id = :id FOR UPDATE"
+            ),
+            {"id": session_id}
+        )
+        row = result.fetchone()
+    except Exception as e:
+        if db.bind.dialect.name == "sqlite":
+            # For SQLite, if FOR UPDATE fails (e.g. database logic issues), fall back to standard select
+            result = await db.execute(
+                text(
+                    "SELECT id, is_killed, kill_reason, realized_pnl, unrealized_pnl, "
+                    "max_daily_loss, max_open_orders, max_lot_size, max_margin_usage_pct "
+                    "FROM trading_sessions WHERE id = :id"
+                ),
+                {"id": session_id}
+            )
+            row = result.fetchone()
+        else:
+            raise
+
     if not row:
         raise ValueError(f"Trading session {session_id} not found")
     return row

@@ -73,7 +73,7 @@ class StatisticalSniper:
             if (side == "BUY" and ltp <= sl) or (side == "SELL" and ltp >= sl):
                 logger.info(f"StatisticalSniper: SL HIT at {ltp} (Entry: {entry}, SL: {sl})")
                 self.position_state = None
-                return {"signal": "EXIT_SL", "ltp": ltp, "pnl": ltp - entry if side == "BUY" else entry - ltp, "thought_process": f"Stop loss hit at {ltp}"}
+                return {"signal": "EXIT_SL", "ltp": ltp, "direction": side, "pnl": ltp - entry if side == "BUY" else entry - ltp, "thought_process": f"Stop loss hit at {ltp}"}
                 
             # Check T1 (Scale out 90%)
             if stage == 0:
