@@ -52,7 +52,7 @@ class StatisticalSniper:
         """Main entrypoint called by StrategyExecutor."""
         df = self._calculate_indicators(buffer)
         if df is None:
-            return {"signal": "WARMING_UP", "ltp": tick["ltp"]}
+            return {"signal": "WARMING_UP", "ltp": tick["ltp"], "thought_process": "Collecting candles for indicators, warming up..."}
             
         curr = df.iloc[-1]
         z_score = curr["z_score"]
@@ -73,7 +73,7 @@ class StatisticalSniper:
             if (side == "BUY" and ltp <= sl) or (side == "SELL" and ltp >= sl):
                 logger.info(f"StatisticalSniper: SL HIT at {ltp} (Entry: {entry}, SL: {sl})")
                 self.position_state = None
-                return {"signal": "EXIT_SL", "ltp": ltp, "pnl": ltp - entry if side == "BUY" else entry - ltp}
+                return {"signal": "EXIT_SL", "ltp": ltp, "pnl": ltp - entry if side == "BUY" else entry - ltp, "thought_process": f"Stop loss hit at {ltp}"}
                 
             # Check T1 (Scale out 90%)
             if stage == 0:
@@ -99,7 +99,10 @@ class StatisticalSniper:
                 "pnl": ltp - entry if side == "BUY" else entry - ltp,
                 "open_qty": 65 if stage == 0 else 0, # Exited out
                 "avg_entry": entry,
-                "direction": side
+                "direction": side,
+                "thought_process": f"Holding {side}. Stage {stage}. Target 1: {t1:.1f}",
+                "stop_loss": state["sl"],
+                "target_price": t1
             }
 
         # 2. CHECK FOR NEW ENTRY
@@ -132,14 +135,18 @@ class StatisticalSniper:
                 "ltp": ltp,
                 "avg_entry": ltp,
                 "direction": signal,
-                "target_instrument": {"type": "OPTION", "leg": "CE" if signal == "BUY" else "PE"}
+                "target_instrument": {"type": "OPTION", "leg": "CE" if signal == "BUY" else "PE"},
+                "thought_process": f"Sniper entry! Z-Score {z_score:.2f} extreme.",
+                "stop_loss": sl,
+                "target_price": t1
             }
 
         return {
             "signal": "WAITING",
             "ltp": ltp,
             "z_score": round(z_score, 2),
-            "ker": round(ker, 2)
+            "ker": round(ker, 2),
+            "thought_process": f"Monitoring Z-Score: {z_score:.2f}, KER: {ker:.2f}. " + ("Market is choppy." if is_choppy else "Market trending, staying out.")
         }
 
 def get_strategy():

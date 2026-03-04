@@ -326,6 +326,9 @@ class StrategyExecutor:
         strategy.current_signal = m.get("signal", "FLAT")
         strategy.win_rate = m.get("win_rate", 0)
         strategy.total_trades = m.get("trades", 0)
+        strategy.thought_process = m.get("thought_process")
+        strategy.stop_loss = m.get("stop_loss")
+        strategy.target_price = m.get("target_price")
 
         # Telegram Notifications on Signal Change AND Live Order Execution
         new_sig = m.get("signal", "FLAT")

@@ -90,7 +90,7 @@ class FailedAuctionB2:
         
         df = self._calculate_indicators()
         if df is None:
-            return {"signal": "WARMING_UP", "ltp": tick["ltp"]}
+            return {"signal": "WARMING_UP", "ltp": tick["ltp"], "thought_process": "Collecting candles for indicators, warming up..."}
 
         curr = df.iloc[-1]
         close_p = curr["close"]
@@ -99,11 +99,11 @@ class FailedAuctionB2:
         
         # 1. RSI Filter (40-60)
         if not (40 <= rsi <= 60):
-            return {"signal": "RSI_OUT", "ltp": tick["ltp"], "rsi": round(rsi, 2)}
+            return {"signal": "RSI_OUT", "ltp": tick["ltp"], "rsi": round(rsi, 2), "thought_process": f"RSI is {rsi:.1f}, waiting for 40-60 zone"}
             
         # 2. VWAP Filter (Price > VWAP for bearish failure)
         if not (close_p > vwap):
-            return {"signal": "BELOW_VWAP", "ltp": tick["ltp"], "vwap": round(vwap, 2)}
+            return {"signal": "BELOW_VWAP", "ltp": tick["ltp"], "vwap": round(vwap, 2), "thought_process": f"Price {close_p} is below VWAP {vwap:.1f}"}
         
         # 3. Premium Zone (Upper 50% of recent range)
         recent_df = df.iloc[-self.range_period:]
@@ -112,7 +112,7 @@ class FailedAuctionB2:
         r_mid = (r_high + r_low) / 2
         
         if not (close_p > r_mid):
-            return {"signal": "NOT_PREMIUM", "ltp": tick["ltp"]}
+            return {"signal": "NOT_PREMIUM", "ltp": tick["ltp"], "thought_process": f"Price {close_p} not in premium zone (> {r_mid:.1f})"}
             
         # 4. Failed Auction Logic (Sweep high and close below)
         past_df = df.iloc[-(self.lookback_period+1):-1]
@@ -135,14 +135,18 @@ class FailedAuctionB2:
                 "ltp": close_p,
                 "pnl": 0,
                 "direction": "SHORT",
-                "target_instrument": {"type": "OPTION", "leg": "PE"}
+                "target_instrument": {"type": "OPTION", "leg": "PE"},
+                "thought_process": f"Failed Auction confirmed! Sweep > {resistance:.1f} and rejection.",
+                "stop_loss": stop_loss,
+                "target_price": target
             }
 
         return {
             "signal": "WAITING",
             "ltp": tick["ltp"],
             "rsi": round(rsi, 2),
-            "vwap": round(vwap, 2)
+            "vwap": round(vwap, 2),
+            "thought_process": f"Monitoring for sweep above {resistance:.1f}. RSI: {rsi:.1f}, VWAP: {vwap:.1f}"
         }
 
 # Factory for the executor

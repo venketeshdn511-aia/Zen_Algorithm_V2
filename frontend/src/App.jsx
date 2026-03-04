@@ -598,6 +598,18 @@ function StratCard({ s, selected, onClick, onAction }) {
         Δ {s.delta > 0 ? "+" : ""}{s.delta} · Risk {s.riskPct}%
       </div>
 
+      {s.thought_process && (
+        <div style={{ fontSize: "10px", color: "var(--amber)", padding: "4px 8px", background: "rgba(245, 166, 35, 0.1)", borderRadius: "4px", margin: "6px 12px 0", lineHeight: 1.3, border: "1px solid rgba(245, 166, 35, 0.2)" }}>
+          💡 {s.thought_process}
+        </div>
+      )}
+      {s.openQty > 0 && s.stop_loss && s.target_price && (
+        <div style={{ display: "flex", justifyContent: "space-between", margin: "6px 12px 0", fontSize: "10px", padding: "4px 8px", background: "var(--s3)", borderRadius: "4px" }}>
+          <span style={{ color: "var(--red)", fontWeight: 600 }}>SL: {f.num(s.stop_loss)}</span>
+          <span style={{ color: "var(--green)", fontWeight: 600 }}>TGT: {f.num(s.target_price)}</span>
+        </div>
+      )}
+
       {s.status === "error" && s.errorMsg && (
         <div className="sc-error-badge">
           ⚠ {s.errorMsg}
@@ -746,7 +758,13 @@ function StratDrawer({ s, onClose, onAction }) {
             <div className="dc-title">Current Position</div>
             {s.openQty > 0 ? (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 14px" }}>
-                {[["Open Qty", s.openQty], ["Avg Entry", `₹${f.num(s.avgEntry)}`], ["LTP", `₹${f.num(s.ltp)}`], ["MTM", f.pnl((s.ltp - s.avgEntry) * s.openQty)], ["Direction", s.direction], ["Delta", s.delta > 0 ? `+${s.delta}` : s.delta]].map(([l, v]) => (
+                {[
+                  ["Open Qty", s.openQty], ["Avg Entry", `₹${f.num(s.avgEntry)}`],
+                  ["LTP", `₹${f.num(s.ltp)}`], ["MTM", f.pnl((s.ltp - s.avgEntry) * s.openQty)],
+                  ["Direction", s.direction], ["Delta", s.delta > 0 ? `+${s.delta}` : s.delta],
+                  ["Stop Loss", s.stop_loss ? `₹${f.num(s.stop_loss)}` : "—"],
+                  ["Target", s.target_price ? `₹${f.num(s.target_price)}` : "—"]
+                ].map(([l, v]) => (
                   <div key={l}>
                     <div style={{ fontSize: 8, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".5px" }}>{l}</div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "var(--t1)" }}>{v}</div>

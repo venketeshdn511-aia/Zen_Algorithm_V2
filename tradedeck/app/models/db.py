@@ -378,6 +378,10 @@ class StrategyState(Base):
     symbol          = Column(String(100), nullable=True)
     strategy_type   = Column(String(50), nullable=True)
 
+    thought_process = Column(Text, nullable=True)
+    stop_loss       = Column(Float, nullable=True)
+    target_price    = Column(Float, nullable=True)
+
     error_message   = Column(Text, nullable=True)
     error_trace     = Column(Text, nullable=True)
     error_count     = Column(Integer, default=0)

@@ -409,6 +409,7 @@ async def get_strategies(
             "SELECT strategy_name, status, control_intent, pnl, allocated_capital, "
             "open_qty, avg_entry, ltp, win_rate, total_trades, net_delta, drawdown_pct, "
             "max_dd_pct, risk_pct, direction_bias, current_signal, symbol, strategy_type, "
+            "thought_process, stop_loss, target_price, "
             "error_message, error_trace, error_count, last_good_at, restart_count, "
             "auto_restart, last_trade_at, updated_at "
             "FROM strategy_states ORDER BY strategy_name"
@@ -443,6 +444,9 @@ async def get_strategies(
             "signal":         r.current_signal,
             "symbol":         r.symbol,
             "type":           r.strategy_type,
+            "thought_process": r.thought_process,
+            "stop_loss":      r.stop_loss,
+            "target_price":   r.target_price,
             "last_trade":     last_trade_str,
             # Error fields
             "error_msg":      r.error_message,
