@@ -19,6 +19,7 @@ class FailedAuctionB2:
         self.range_period = range_period
         
         # State
+        self.history_fetched = False
         self.candles_15m: List[Dict] = []
         self.current_candle: Optional[Dict] = None
         self.last_processed_minute: Optional[int] = None
@@ -86,6 +87,43 @@ class FailedAuctionB2:
 
     async def __call__(self, tick: dict, buffer, db: AsyncSession, broker, risk) -> dict:
         """Main entrypoint called by StrategyExecutor."""
+        if not self.history_fetched and broker:
+            self.history_fetched = True
+            symbol = tick.get("symbol")
+            if symbol:
+                try:
+                    to_date = datetime.now()
+                    from_date = to_date - timedelta(days=5)
+                    
+                    hist_data = await broker.get_history(
+                        symbol=symbol,
+                        resolution="15",
+                        range_from=from_date.strftime("%Y-%m-%d"),
+                        range_to=to_date.strftime("%Y-%m-%d")
+                    )
+                    
+                    if hist_data and hist_data.get("s") == "ok" and "candles" in hist_data:
+                        for candle in hist_data["candles"]:
+                            # Fyers returns [epoch, open, high, low, close, volume]
+                            dt = datetime.fromtimestamp(candle[0])
+                            
+                            self.candles_15m.append({
+                                "time": dt,
+                                "open": candle[1],
+                                "high": candle[2],
+                                "low": candle[3],
+                                "close": candle[4],
+                                "volume": candle[5]
+                            })
+                            
+                        # Keep max 100 historical candles
+                        if len(self.candles_15m) > 100:
+                            self.candles_15m = self.candles_15m[-100:]
+                            
+                        logger.info(f"FailedAuctionB2: Fetched {len(hist_data['candles'])} historical 15m candles for {symbol}")
+                except Exception as e:
+                    logger.error(f"FailedAuctionB2: Error fetching historical data: {e}")
+
         self._update_candles(tick)
         
         df = self._calculate_indicators()
