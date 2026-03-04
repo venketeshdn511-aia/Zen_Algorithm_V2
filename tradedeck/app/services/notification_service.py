@@ -41,12 +41,18 @@ class NotificationService:
                 if response.status_code == 200:
                     return True
                 else:
-                    logger.error(f"Telegram send_message failed: {response.status_code} - {response.text}")
                     # Retry once without parse_mode if it failed (often due to formatting)
                     if response.status_code == 400:
-                        payload.pop("parse_mode")
+                        payload.pop("parse_mode", None)
                         resp2 = await client.post(url, json=payload)
-                        return resp2.status_code == 200
+                        if resp2.status_code == 200:
+                            logger.warning("Telegram Markdown parse failed, but fallback to plain text succeeded.")
+                            return True
+                        else:
+                            logger.error(f"Telegram send_message fallback failed: {resp2.status_code} - {resp2.text}")
+                            return False
+                            
+                    logger.error(f"Telegram send_message failed: {response.status_code} - {response.text}")
                     return False
         except Exception as e:
             logger.error(f"Error sending Telegram message: {e}")

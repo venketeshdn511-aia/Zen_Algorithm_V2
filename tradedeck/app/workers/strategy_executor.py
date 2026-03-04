@@ -448,7 +448,7 @@ class StrategyExecutor:
                         asyncio.create_task(self.notifier.send_message(
                             f"🛡️ *RISK BLOCKED ENTRY*: `{name}`\n"
                             f"• Action: {new_sig} {qty}x {final_target_symbol}\n"
-                            f"• Reason: _{risk_result.message}_"
+                            f"• Reason: {risk_result.message}"
                         ))
 
             # Exit Alert and LIVE ORDER PLACEMENT
@@ -457,10 +457,10 @@ class StrategyExecutor:
                 qty = m.get("open_qty", 65)
                 # Opposite side to exit: If we were Long (BUY), we now SELL to exit (-1). If Short, BUY to exit (1).
                 direction = m.get("direction", "NEUTRAL") 
-                if direction == "LONG":
+                if direction in ("LONG", "BUY"):
                     broker_side = -1 # SELL
                     db_side = OrderSide.SELL
-                elif direction == "SHORT":
+                elif direction in ("SHORT", "SELL"):
                     broker_side = 1  # BUY
                     db_side = OrderSide.BUY
                 else: 
@@ -573,7 +573,7 @@ class StrategyExecutor:
                         asyncio.create_task(self.notifier.send_message(
                             f"🛡️ *RISK BLOCKED EXIT*: `{name}`\n"
                             f"• Action: {new_sig} {qty}x {final_target_symbol}\n"
-                            f"• Reason: _{risk_result.message}_"
+                            f"• Reason: {risk_result.message}"
                         ))
         
         self._prev_signals[name] = new_sig
