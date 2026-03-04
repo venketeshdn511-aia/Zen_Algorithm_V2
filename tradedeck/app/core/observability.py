@@ -86,7 +86,12 @@ def configure_logging(level: str = "INFO") -> None:
     root.handlers.clear()
 
     handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JSONFormatter())
+    # Use a human-readable format instead of JSON
+    formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    handler.setFormatter(formatter)
     root.addHandler(handler)
 
     # Quiet noisy libraries

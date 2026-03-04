@@ -46,7 +46,7 @@ class NotificationService:
                         payload.pop("parse_mode", None)
                         resp2 = await client.post(url, json=payload)
                         if resp2.status_code == 200:
-                            logger.warning("Telegram Markdown parse failed, but fallback to plain text succeeded.")
+                            logger.debug("Telegram Markdown parse failed, but fallback to plain text succeeded.")
                             return True
                         else:
                             logger.error(f"Telegram send_message fallback failed: {resp2.status_code} - {resp2.text}")
