@@ -165,6 +165,9 @@ async def lock_session_row(db: AsyncSession, session_id: str):
     # Note: SQLite may not fully support row level locking with FOR UPDATE
     # in the same way Postgres does across all driver configurations but
     # SQLAlchemy manages syntax conversion gracefully. 
+    # Ensure session_id format matches DB schema (SQLite GenericUUID stores without hyphens)
+    session_id_hex = session_id.replace("-", "")
+    
     try:
         result = await db.execute(
             text(
@@ -172,7 +175,7 @@ async def lock_session_row(db: AsyncSession, session_id: str):
                 "max_daily_loss, max_open_orders, max_lot_size, max_margin_usage_pct "
                 "FROM trading_sessions WHERE id = :id FOR UPDATE"
             ),
-            {"id": session_id}
+            {"id": session_id_hex}
         )
         row = result.fetchone()
     except Exception as e:
@@ -184,7 +187,7 @@ async def lock_session_row(db: AsyncSession, session_id: str):
                     "max_daily_loss, max_open_orders, max_lot_size, max_margin_usage_pct "
                     "FROM trading_sessions WHERE id = :id"
                 ),
-                {"id": session_id}
+                {"id": session_id_hex}
             )
             row = result.fetchone()
         else:

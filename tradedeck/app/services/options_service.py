@@ -36,7 +36,7 @@ class OptionsService:
                     
                     # Keep only NIFTY Options
                     # Fyers Option types are numeric or string based on segment. We filter by symbol starting with NSE:NIFTY
-                    nifty_opts = df[(df["UnderlyingScripCode"] == "NIFTY") & (df["SymbolTicker"].str.contains(r"CE$|PE$"))].copy()
+                    nifty_opts = df[(df["SymbolTicker"].str.startswith("NSE:NIFTY")) & (df["SymbolTicker"].str.contains(r"CE$|PE$"))].copy()
                     
                     # Store
                     self.master_df = nifty_opts
@@ -95,22 +95,39 @@ class OptionsService:
         # Filter for the target Expiry
         expiry_df = df_filtered[df_filtered["ExpiryDate"] == nearest_expiry].copy()
         
-        # Robust strike matching: round both to avoid precision issues
-        expiry_df["StrikePrice"] = expiry_df["StrikePrice"].astype(float).round(0).astype(int)
+        # Robust strike matching: Extract strike price directly from the SymbolTicker 
+        # SymbolTicker format: NSE:NIFTY<YYMDD><STRIKE><CE/PE>
+        # Example: NSE:NIFTY2631020400CE -> 20400
+        # We can extract it by removing the prefix 'NSE:NIFTY', removing 'CE'/'PE', 
+        # and taking the last 5 characters (since Nifty strikes are 5 digits).
+        # To be safe, we just regex extract digits before CE/PE
+        import re
+        def extract_strike(ticker):
+            match = re.search(r'(\d+)(CE|PE)$', ticker)
+            if match:
+                # The matched digits might be e.g. '2631020400'. The strike is usually the last 5 digits.
+                # However, Fyers format is NIFTY YY M DD STRIKE CE. e.g. 26 3 10 20400 CE. 
+                # If strike is 20400, it's 5 chars. If it is 9000, it's 4 chars.
+                # Actually, pulling it from the right side before CE/PE:
+                num_str = match.group(1)
+                return int(num_str[-5:]) if len(num_str) >= 5 else int(num_str)
+            return 0
+            
+        expiry_df["ParsedStrike"] = expiry_df["SymbolTicker"].apply(extract_strike)
         
-        target_options = expiry_df[expiry_df["StrikePrice"] == atm_strike]
+        target_options = expiry_df[expiry_df["ParsedStrike"] == atm_strike]
         
         if target_options.empty:
-            found_strikes = sorted(expiry_df["StrikePrice"].unique())
+            found_strikes = sorted(expiry_df["ParsedStrike"].unique())
             logger.error(
                 f"OptionsService: No exact match for Expiry {expiry_dt} ({nearest_expiry}), Strike {atm_strike} {option_type}. "
                 f"Found {len(found_strikes)} strikes in this expiry. Range: {min(found_strikes) if found_strikes else 'N/A'} - {max(found_strikes) if found_strikes else 'N/A'}"
             )
             # Fallback: Find closest strike available
-            expiry_df['StrikeDiff'] = abs(expiry_df['StrikePrice'] - atm_strike)
+            expiry_df['StrikeDiff'] = abs(expiry_df['ParsedStrike'] - atm_strike)
             if not expiry_df.empty:
                 closest = expiry_df.sort_values('StrikeDiff').iloc[0]
-                logger.warning(f"OptionsService: Falling back to closest strike {closest['StrikePrice']} instead of target {atm_strike}")
+                logger.warning(f"OptionsService: Falling back to closest strike {closest['ParsedStrike']} instead of target {atm_strike}")
                 return closest["SymbolTicker"]
             return None
             
