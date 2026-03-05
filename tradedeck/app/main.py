@@ -127,7 +127,7 @@ async def lifespan(app: FastAPI):
     await executor.start()
     await feed.start(symbols=["NSE:NIFTY50-INDEX"])
     await tg_worker.start()
-    await mongo.connect()
+    # NOTE: mongo.connect() was already called above (line ~102) — do NOT call again here
     
     # Send Startup Message
     await notifier.send_message("🚀 *TradeDeck v2 Production* components initialized and background tasks started.")

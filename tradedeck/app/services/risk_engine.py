@@ -9,6 +9,7 @@ Changes from v1:
   - Reconcile failure counter read from DB (survives restart)
 """
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -95,6 +96,36 @@ class RiskEngine:
         locked_row = result of SELECT FOR UPDATE — always fresh.
         """
         session_id = str(locked_row.id if hasattr(locked_row, 'id') else locked_row[0])
+
+        # ── 0. RISK BYPASS MODE (set RISK_BYPASS_MODE=true in Render env) ────
+        # Skips margin, lot-size, position, and daily-loss checks.
+        # Kill switch + idempotency are ALWAYS enforced regardless.
+        if os.getenv("RISK_BYPASS_MODE", "").lower() == "true":
+            # Still check kill switch
+            is_killed = locked_row.is_killed if hasattr(locked_row, 'is_killed') else locked_row[1]
+            if is_killed:
+                kill_reason = locked_row.kill_reason if hasattr(locked_row, 'kill_reason') else locked_row[2]
+                return RiskCheckResult(
+                    approved=False, code="KILL_SWITCH_ACTIVE",
+                    message=f"Trading halted: {kill_reason}. No orders accepted."
+                )
+            # Still check idempotency
+            dup = await db.execute(
+                text("SELECT id FROM orders WHERE idempotency_key = :key"),
+                {"key": idempotency_key}
+            )
+            if dup.fetchone():
+                return RiskCheckResult(
+                    approved=False, code="DUPLICATE_ORDER",
+                    message=f"Order with key {idempotency_key[:16]}... already processed."
+                )
+            logger.warning(
+                f"[RISK] ⚠️ BYPASS ACTIVE — skipping margin/lot/position checks for {side} {quantity} {symbol}"
+            )
+            return RiskCheckResult(
+                approved=True,
+                snapshot={"bypass": True, "timestamp": datetime.now(timezone.utc).isoformat()}
+            )
 
         # ── 1. KILL SWITCH (check against DB row, not ORM cache) ──
         is_killed = locked_row.is_killed if hasattr(locked_row, 'is_killed') else locked_row[1]

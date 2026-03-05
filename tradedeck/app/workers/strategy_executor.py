@@ -340,7 +340,8 @@ class StrategyExecutor:
             # Entry Alert and LIVE ORDER PLACEMENT
             if new_sig in ("BUY", "SELL"):
                 # 1. Determine execution parameters
-                qty = m.get("open_qty", 65)
+                # Use qty from strategy signal; fallback is current NIFTY lot size (75 since Apr 2024)
+                qty = m.get("open_qty", 75)
                 # Fyers logic: 1 = BUY, -1 = SELL
                 broker_side = 1 if new_sig == "BUY" else -1
                 
@@ -454,7 +455,8 @@ class StrategyExecutor:
             # Exit Alert and LIVE ORDER PLACEMENT
             elif new_sig.startswith("EXIT_"):
                 # 1. Determine execution parameters
-                qty = m.get("open_qty", 65)
+                # Use qty from strategy signal; fallback is current NIFTY lot size (75 since Apr 2024)
+                qty = m.get("open_qty", 75)
                 # Opposite side to exit: If we were Long (BUY), we now SELL to exit (-1). If Short, BUY to exit (1).
                 direction = m.get("direction", "NEUTRAL") 
                 if direction in ("LONG", "BUY"):
