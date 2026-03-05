@@ -184,47 +184,54 @@ class ResourceMonitor:
         rss_leak_confirmed  = self._rss_leak_streak >= LEAK_CONFIRM_SAMPLES
         fd_leak_confirmed   = self._fd_leak_streak  >= LEAK_CONFIRM_SAMPLES
 
-        # ── Write sample to DB ─────────────────────────────────────────────
-        async with self.session_factory() as db:
-            await db.execute(
-                text(
-                    "INSERT INTO resource_metrics "
-                    "(recorded_at, rss_mb, vms_mb, rss_delta_mb, cpu_pct, cpu_sys_pct, "
-                    " pool_checked_out, pool_size, pool_overflow, open_fds, active_tasks, "
-                    " rss_leak_flag, fd_leak_flag, running_strategies, tick_rate_hz) "
-                    "VALUES "
-                    "(:ts, :rss, :vms, :delta, :cpu, :cpu_s, "
-                    " :pool_out, :pool_sz, :pool_of, :fds, :tasks, "
-                    " :rss_lk, :fd_lk, :run_s, :ticks)"
-                ),
-                {
-                    "ts":       now,
-                    "rss":      rss,   "vms":     vms,    "delta":   delta,
-                    "cpu":      cpu_proc, "cpu_s": cpu_sys,
-                    "pool_out": pool_out, "pool_sz": pool_size, "pool_of": pool_of,
-                    "fds":      open_fds, "tasks":   active_tasks,
-                    "rss_lk":   rss_leak_confirmed,
-                    "fd_lk":    fd_leak_confirmed,
-                    "run_s":    running_count,
-                    "ticks":    tick_rate,
-                }
-            )
-
-            # ── Fire alerts ────────────────────────────────────────────────
-            await self._check_thresholds(db, now, rss, cpu_proc, open_fds,
-                                          active_tasks, pool_out, pool_size,
-                                          rss_leak_confirmed, fd_leak_confirmed)
-
-            # ── Prune old samples ──────────────────────────────────────────
-            await db.execute(
-                text(
-                    "DELETE FROM resource_metrics "
-                    "WHERE recorded_at < NOW() - INTERVAL ':days days'"
-                    .replace(":days days", f"{RETENTION_DAYS} days")
+        # ── Write sample to DB (SKIP ON RENDER FREE TIER) ─────────────────
+        from app.core.config import settings
+        if settings.IS_RENDER:
+            # Just log the alert check logic, skip DB persistence to save IOPS/RAM
+            await self._check_thresholds_no_db(now, rss, cpu_proc, open_fds,
+                                              active_tasks, pool_out, pool_size,
+                                              rss_leak_confirmed, fd_leak_confirmed)
+        else:
+            async with self.session_factory() as db:
+                await db.execute(
+                    text(
+                        "INSERT INTO resource_metrics "
+                        "(recorded_at, rss_mb, vms_mb, rss_delta_mb, cpu_pct, cpu_sys_pct, "
+                        " pool_checked_out, pool_size, pool_overflow, open_fds, active_tasks, "
+                        " rss_leak_flag, fd_leak_flag, running_strategies, tick_rate_hz) "
+                        "VALUES "
+                        "(:ts, :rss, :vms, :delta, :cpu, :cpu_s, "
+                        " :pool_out, :pool_sz, :pool_of, :fds, :tasks, "
+                        " :rss_lk, :fd_lk, :run_s, :ticks)"
+                    ),
+                    {
+                        "ts":       now,
+                        "rss":      rss,   "vms":     vms,    "delta":   delta,
+                        "cpu":      cpu_proc, "cpu_s": cpu_sys,
+                        "pool_out": pool_out, "pool_sz": pool_size, "pool_of": pool_of,
+                        "fds":      open_fds, "tasks":   active_tasks,
+                        "rss_lk":   rss_leak_confirmed,
+                        "fd_lk":    fd_leak_confirmed,
+                        "run_s":    running_count,
+                        "ticks":    tick_rate,
+                    }
                 )
-            )
 
-            await db.commit()
+                # ── Fire alerts ────────────────────────────────────────────────
+                await self._check_thresholds(db, now, rss, cpu_proc, open_fds,
+                                              active_tasks, pool_out, pool_size,
+                                              rss_leak_confirmed, fd_leak_confirmed)
+
+                # ── Prune old samples ──────────────────────────────────────────
+                await db.execute(
+                    text(
+                        "DELETE FROM resource_metrics "
+                        "WHERE recorded_at < NOW() - INTERVAL ':days days'"
+                        .replace(":days days", f"{RETENTION_DAYS} days")
+                    )
+                )
+
+                await db.commit()
 
         # ── Structured log every sample ────────────────────────────────────
         logger.info(
@@ -328,6 +335,25 @@ class ResourceMonitor:
                         text("UPDATE resource_alerts SET resolved_at=:ts WHERE id=:id"),
                         {"ts": now, "id": self._active_alerts.pop(alert_type)}
                     )
+
+    async def _check_thresholds_no_db(
+        self, now, rss, cpu, fds, tasks, pool_out, pool_size,
+        rss_leak, fd_leak
+    ) -> None:
+        """Version of alert check that only logs, avoiding DB on restricted environments."""
+        checks = [
+            ("RSS_HIGH",       rss,   RSS_CRITICAL_MB,  f"RSS {rss:.1f}MB >= {RSS_CRITICAL_MB}MB limit"),
+            ("RSS_WARN",       rss,   RSS_WARN_MB,      f"RSS {rss:.1f}MB >= {RSS_WARN_MB}MB warning threshold"),
+            ("CPU_SPIKE",      cpu,   CPU_WARN_PCT,     f"Process CPU {cpu:.1f}% >= {CPU_WARN_PCT}%"),
+        ]
+        if fds is not None:
+            checks.append(("FD_HIGH", fds, FD_WARN, f"Open FDs {fds} >= {FD_WARN}"))
+        if tasks is not None:
+            checks.append(("TASK_HIGH", tasks, TASK_WARN, f"Asyncio tasks {tasks} >= {TASK_WARN}"))
+        
+        for alert_type, current, threshold, message in checks:
+            if current >= threshold or alert_type in ("RSS_LEAK", "FD_LEAK"):
+                logger.warning("RESOURCE ALERT [%s]: %s", alert_type, message)
 
     # ─────────────────────────────────────────────────────────────────────
     # QUERY API — used by /health/detailed and /api/v1/observe/infra

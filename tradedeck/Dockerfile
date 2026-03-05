@@ -33,19 +33,21 @@ ENV PYTHONUNBUFFERED=1
 
 # Matplotlib Config Dir
 ENV MPLCONFIGDIR=/tmp/matplotlib
+# Memory optimization for 512MB RAM limit
+ENV MALLOC_TRIM_THRESHOLD_=100000
 
 EXPOSE 8000
 
 # Gunicorn with Uvicorn workers
 # We call it via the full path or ensure /opt/venv/bin is in PATH
 CMD ["gunicorn", "app.main:app", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--workers", "1", \
-     "--bind", "0.0.0.0:8000", \
-     "--timeout", "120", \
-     "--graceful-timeout", "10", \
-     "--keep-alive", "5", \
-     "--log-level", "info", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-", \
-     "--capture-output"]
+    "--worker-class", "uvicorn.workers.UvicornWorker", \
+    "--workers", "1", \
+    "--bind", "0.0.0.0:8000", \
+    "--timeout", "120", \
+    "--graceful-timeout", "10", \
+    "--keep-alive", "5", \
+    "--log-level", "info", \
+    "--access-logfile", "-", \
+    "--error-logfile", "-", \
+    "--capture-output"]
