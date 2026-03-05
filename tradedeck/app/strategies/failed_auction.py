@@ -32,8 +32,8 @@ from app.models.db import OrderSide, OrderType, ProductType
 
 logger = logging.getLogger(__name__)
 
-# NIFTY lot size updated Apr 2024
-NIFTY_LOT_SIZE = 75
+# NIFTY lot size
+NIFTY_LOT_SIZE = 65
 
 
 class FailedAuctionB1:
