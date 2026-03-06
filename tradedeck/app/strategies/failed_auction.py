@@ -114,6 +114,7 @@ class FailedAuctionB1:
         df["rsi"] = 100 - (100 / (1 + rs))
 
         # VWAP — guard against zero cumulative volume (pre-market / zero-vol candles)
+        df["time"] = pd.to_datetime(df["time"])
         df["date"] = df["time"].dt.date
         df["tp"]   = (df["high"] + df["low"] + df["close"]) / 3
         df["pv"]   = df["tp"] * df["volume"]

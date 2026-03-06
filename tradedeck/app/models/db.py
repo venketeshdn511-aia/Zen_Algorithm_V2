@@ -48,8 +48,9 @@ class OrderType(str, PyEnum):
 
 
 class ProductType(str, PyEnum):
-    MIS  = "MIS"
-    NRML = "NRML"
+    MIS      = "MIS"
+    NRML     = "NRML"
+    INTRADAY = "INTRADAY"
 
 
 class OrderStatus(str, PyEnum):
