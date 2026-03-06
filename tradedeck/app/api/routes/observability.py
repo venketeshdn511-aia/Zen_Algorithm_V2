@@ -208,6 +208,14 @@ async def _get_redis_stats(redis_client=None) -> dict:
 
 import traceback
 
+def _parse_ts(ts_val):
+    if not ts_val: return None
+    if isinstance(ts_val, datetime): return ts_val
+    if isinstance(ts_val, str):
+        try: return datetime.fromisoformat(ts_val.replace('Z', '+00:00'))
+        except: return None
+    return None
+
 @router.get("/telemetry")
 async def get_telemetry(
     request: Request,
@@ -323,8 +331,9 @@ async def get_telemetry(
 
         # ── Reconciliation lag ─────────────────────────────────────────────────
         recon_lag = None
-        if sess and sess.last_reconcile_at:
-            recon_lag = round((datetime.now(timezone.utc) - sess.last_reconcile_at).total_seconds())
+        lr_ts = _parse_ts(sess.last_reconcile_at) if sess else None
+        if lr_ts:
+            recon_lag = round((datetime.now(timezone.utc) - lr_ts).total_seconds())
 
         # ── Strategy counts ────────────────────────────────────────────────────
         strat_counts = (await db.execute(
@@ -363,7 +372,7 @@ async def get_telemetry(
                 "counts":        counts,
                 "reconcile": {
                     "fail_n": sess.reconcile_failure_count if sess else 0,
-                    "last_run": sess.last_reconcile_at.isoformat() if (sess and sess.last_reconcile_at) else None,
+                    "last_run": lr_ts.isoformat() if lr_ts else None,
                     "status": sess.last_reconcile_status if sess else "unknown",
                 }
             },
@@ -419,12 +428,12 @@ async def get_strategies(
 
     strategies = []
     for r in rows:
-        last_trade_str = (
-            r.last_trade_at.strftime("%H:%M:%S") if r.last_trade_at else None
-        )
-        last_good_str = (
-            r.last_good_at.strftime("%H:%M:%S") if r.last_good_at else None
-        )
+        lt_ts = _parse_ts(r.last_trade_at)
+        last_trade_str = lt_ts.strftime("%H:%M:%S") if lt_ts else None
+        
+        lg_ts = _parse_ts(r.last_good_at)
+        last_good_str = lg_ts.strftime("%H:%M:%S") if lg_ts else None
+
         strategies.append({
             "name":           r.strategy_name,
             "status":         r.status,
@@ -801,7 +810,7 @@ async def get_orders(
         "orders": [
             {
                 "id":     r.id,
-                "time":   r.created_at.strftime("%H:%M:%S"),
+                "time":   _parse_ts(r.created_at).strftime("%H:%M:%S") if _parse_ts(r.created_at) else str(r.created_at),
                 "event":  r.status,
                 "sym":    r.symbol,
                 "strat":  r.strategy_name or "Unknown",
@@ -853,7 +862,7 @@ async def get_logs(
 
         logs.append({
             "id":     i,
-            "time":   r.created_at.strftime("%H:%M:%S") if hasattr(r.created_at, 'strftime') else str(r.created_at),
+            "time":   _parse_ts(r.created_at).strftime("%H:%M:%S") if _parse_ts(r.created_at) else str(r.created_at),
             "level":  r.level,
             "msg":    msg,
             "module": r.module or "system",
