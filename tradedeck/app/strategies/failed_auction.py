@@ -51,6 +51,9 @@ class FailedAuctionB1:
         self.active_order_id = None
         self.position        = None   # "LONG" when in trade, None when flat
 
+        # Optimization Cache
+        self.indicators_df: Optional[pd.DataFrame] = None
+
     def _parse_tick_time(self, tick: dict) -> datetime:
         """
         Fyers WS sends ts as float epoch OR ISO string depending on API version.
@@ -66,8 +69,11 @@ class FailedAuctionB1:
             pass
         return datetime.now(timezone.utc)
 
-    def _update_candles(self, tick: dict):
-        """Build 15m candles from incoming ticks."""
+    def _update_candles(self, tick: dict) -> bool:
+        """
+        Build 15m candles from incoming ticks.
+        Returns True if a new candle was COMPLETED and added to history.
+        """
         tick_time = self._parse_tick_time(tick)
         candle_start = tick_time.replace(
             minute=(tick_time.minute // 15) * 15,
@@ -76,12 +82,14 @@ class FailedAuctionB1:
 
         ltp = float(tick.get("ltp", 0))
         if ltp <= 0:
-            return
+            return False
 
+        new_candle_added = False
         if self.current_candle is None or self.current_candle["time"] != candle_start:
             # New candle starts — archive previous
             if self.current_candle:
                 self.candles_15m.append(self.current_candle)
+                new_candle_added = True
                 if len(self.candles_15m) > 120:
                     self.candles_15m.pop(0)
 
@@ -99,6 +107,8 @@ class FailedAuctionB1:
             self.current_candle["close"]  = ltp
             self.current_candle["volume"] += float(tick.get("vol", 0))
 
+        return new_candle_added
+
     def _calculate_indicators(self) -> Optional[pd.DataFrame]:
         """Convert collected candles to DataFrame and calculate RSI/VWAP."""
         if len(self.candles_15m) < self.range_period:
@@ -114,7 +124,7 @@ class FailedAuctionB1:
         df["rsi"] = 100 - (100 / (1 + rs))
 
         # VWAP — guard against zero cumulative volume (pre-market / zero-vol candles)
-        df["time"] = pd.to_datetime(df["time"])
+        df["time"] = pd.to_datetime(df["time"], utc=True)
         df["date"] = df["time"].dt.date
         df["tp"]   = (df["high"] + df["low"] + df["close"]) / 3
         df["pv"]   = df["tp"] * df["volume"]
@@ -134,7 +144,7 @@ class FailedAuctionB1:
             symbol = tick.get("symbol")
             if symbol:
                 try:
-                    to_date   = datetime.now()
+                    to_date   = datetime.now(timezone.utc)
                     from_date = to_date - timedelta(days=5)
                     hist_data = await broker.get_history(
                         symbol=symbol,
@@ -144,7 +154,7 @@ class FailedAuctionB1:
                     )
                     if hist_data and hist_data.get("s") == "ok" and "candles" in hist_data:
                         for candle in hist_data["candles"]:
-                            dt = datetime.fromtimestamp(candle[0])
+                            dt = datetime.fromtimestamp(candle[0], tz=timezone.utc)
                             self.candles_15m.append({
                                 "time":   dt,
                                 "open":   candle[1],
@@ -161,9 +171,15 @@ class FailedAuctionB1:
                 except Exception as e:
                     logger.error(f"FailedAuctionB1: Error fetching historical data: {e}")
 
-        self._update_candles(tick)
+        # Update candles and check if a new 15m candle was sealed
+        new_candle_sealed = self._update_candles(tick)
 
-        df = self._calculate_indicators()
+        # Optimization: Only recalculate indicators when history changes
+        # OR if we don't have them yet.
+        if new_candle_sealed or self.indicators_df is None:
+            self.indicators_df = self._calculate_indicators()
+
+        df = self.indicators_df
         if df is None:
             return {
                 "signal": "WARMING_UP",
