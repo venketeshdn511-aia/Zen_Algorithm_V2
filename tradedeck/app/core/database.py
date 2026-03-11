@@ -6,11 +6,16 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import settings
 
+connect_args = {}
+if settings.ASYNC_DATABASE_URL.startswith("sqlite"):
+    connect_args["timeout"] = 15
+
 # Global Engine
 engine = create_async_engine(
     settings.ASYNC_DATABASE_URL,
     echo=False,
-    pool_pre_ping=True
+    pool_pre_ping=True,
+    connect_args=connect_args
 )
 
 # Session Factory

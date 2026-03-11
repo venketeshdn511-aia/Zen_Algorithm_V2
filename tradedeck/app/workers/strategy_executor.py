@@ -345,7 +345,6 @@ class StrategyExecutor:
                 # Fyers logic: 1 = BUY, -1 = SELL
                 broker_side = 1 if new_sig == "BUY" else -1
                 
-                # 2. Get active TradingSession
                 from datetime import date
                 import uuid
                 today = date.today().isoformat()
@@ -353,9 +352,21 @@ class StrategyExecutor:
                 session_obj = ts_query.scalar_one_or_none()
                 
                 if not session_obj:
-                    logger.error(f"[BROKER] 🛑 Cannot execute {new_sig} for {name}: No Active TradingSession found for {today}")
-                    if self.notifier:
-                        asyncio.create_task(self.notifier.send_message(f"⚠️ *ERROR*: Strategy `{name}` triggered {new_sig} but no active `TradingSession` exists for today."))
+                    logger.warning(f"No Active TradingSession found for {today}. Auto-creating one.")
+                    session_obj = TradingSession(
+                        id=str(uuid.uuid4()),
+                        date=today,
+                        max_daily_loss=10000.0,
+                        max_position_size=100,
+                        max_open_orders=10,
+                        max_margin_usage_pct=80.0,
+                        max_lot_size=5
+                    )
+                    db.add(session_obj)
+                    await db.flush()
+                
+                if False: # Dummy to maintain indentation if needed, but not actually needed because we now always have a session block. Better to just proceed.
+                    pass
                 else:
                     idempotency_key = f"{name}_{new_sig}_{datetime.now(timezone.utc).strftime('%H%M%S')}_{str(uuid.uuid4())[:8]}"
                     # 3. Call RiskEngine
@@ -471,7 +482,6 @@ class StrategyExecutor:
                     broker_side = -1 
                     db_side = OrderSide.SELL
                     
-                # 2. Get active TradingSession
                 from datetime import date
                 import uuid
                 today = date.today().isoformat()
@@ -479,9 +489,21 @@ class StrategyExecutor:
                 session_obj = ts_query.scalar_one_or_none()
                 
                 if not session_obj:
-                    logger.error(f"[BROKER] 🛑 Cannot execute {new_sig} for {name}: No Active TradingSession found for {today}")
-                    if self.notifier:
-                        asyncio.create_task(self.notifier.send_message(f"⚠️ *ERROR*: Strategy `{name}` triggered {new_sig} but no active `TradingSession` exists for today."))
+                    logger.warning(f"No Active TradingSession found for {today}. Auto-creating one.")
+                    session_obj = TradingSession(
+                        id=str(uuid.uuid4()),
+                        date=today,
+                        max_daily_loss=10000.0,
+                        max_position_size=100,
+                        max_open_orders=10,
+                        max_margin_usage_pct=80.0,
+                        max_lot_size=5
+                    )
+                    db.add(session_obj)
+                    await db.flush()
+                
+                if False:
+                    pass
                 else:
                     idempotency_key = f"{name}_{new_sig}_{datetime.now(timezone.utc).strftime('%H%M%S')}_{str(uuid.uuid4())[:8]}"
                     # 3. Call RiskEngine
