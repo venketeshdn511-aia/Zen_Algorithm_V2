@@ -155,7 +155,7 @@ class FeedWorker:
         self._consecutive_failures = 0
         self._ws_active = True
 
-        access_token = f"{self.broker.app_id}:{self.broker.access_token}"
+        access_token = self.broker.ws_access_token
         logger.info(f"[FEED] 🔑 Using token format: {access_token[:15]}...{access_token[-10:]}")
         
         # Initialize the Fyers DataSocket
@@ -231,7 +231,10 @@ class FeedWorker:
                     )
                     time.sleep(30)
             except Exception as exc:
-                logger.error("[FEED] ❌ Token refresh raised: %s. Backing off 30s.", exc)
+                import traceback
+                logger.error(
+                    f"[FEED] ❌ Token refresh raised: {exc}.\n{traceback.format_exc()}"
+                )
                 time.sleep(30)
 
         self._ws_active = False  # Exit the _connect_and_receive loop on error

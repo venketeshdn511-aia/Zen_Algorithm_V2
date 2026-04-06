@@ -37,6 +37,11 @@ class BrokerService:
         # We don't initialize client here because we need to sync from DB first
         self.client = None
 
+    @property
+    def ws_access_token(self) -> str:
+        """Construct the correctly formatted token for Fyers V3 DataSocket."""
+        return f"{self.app_id}:{self.access_token}"
+
     def _initialize_client(self):
         """Initialize or re-initialize the Fyers V3 client."""
         self.client = fyersModel.FyersModel(
@@ -179,6 +184,8 @@ class BrokerService:
             possible_paths = [
                 os.path.join(os.getcwd(), ".env"),
                 os.path.join(os.path.dirname(os.getcwd()), ".env"),
+                "/app/.env",
+                "/app/tradedeck/.env",
                 r"c:\Users\Vinay\OneDrive\Desktop\Algo Trading\tradedeck-v2-production\tradedeck\.env"
             ]
             
