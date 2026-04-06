@@ -222,7 +222,7 @@ class FeedWorker:
                 self.broker.refresh_access_token(), self._loop
             )
             try:
-                success = future.result(timeout=20)  # Wait up to 20s for refresh
+                success = future.result(timeout=60)  # Wait up to 60s for refresh
                 if not success:
                     # Refresh failed (bad pin / missing config). Back off 30s to
                     # avoid hammering Fyers with an invalid token in a tight loop.

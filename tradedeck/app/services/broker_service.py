@@ -108,6 +108,7 @@ class BrokerService:
                     })
                     if r1.status_code != 200: raise Exception(f"Step 1 failed: {r1.text}")
                     req_key = r1.json().get("request_key")
+                    logger.info("[BROKER] 🔑 Step 1: Login OTP sent.")
 
                     # 2. verify_otp
                     totp_val = pyotp.TOTP(totp_secret).now()
@@ -117,6 +118,7 @@ class BrokerService:
                     if r2.status_code != 200: 
                         raise Exception(f"Step 2 TOTP verify failed: {r2.text}")
                     req_key2 = r2.json().get("request_key")
+                    logger.info("[BROKER] 🔑 Step 2: TOTP verified.")
 
                     # 3. verify_pin
                     r3 = await client.post("https://api-t2.fyers.in/vagator/v2/verify_pin_v2", json={
@@ -124,6 +126,7 @@ class BrokerService:
                     })
                     if r3.status_code != 200: raise Exception(f"Step 3 PIN verify failed: {r3.text}")
                     session_token = r3.json().get("data", {}).get("access_token")
+                    logger.info("[BROKER] 🔑 Step 3: PIN verified.")
 
                     # 4. token redirect
                     if "-" in self.app_id:
@@ -143,6 +146,7 @@ class BrokerService:
                         auth_code = parse_qs(urlparse(url).query).get("auth_code", [""])[0]
                     
                     if not auth_code: raise Exception(f"Step 4 (Auth Code) failed: {r4.text}")
+                    logger.info("[BROKER] 🔑 Step 4: Auth Code captured.")
 
                     # 5. finalize
                     app_hash = hashlib.sha256(f"{self.app_id}:{self.secret_id}".encode()).hexdigest()
