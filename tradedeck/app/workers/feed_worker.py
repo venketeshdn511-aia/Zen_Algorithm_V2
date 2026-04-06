@@ -156,6 +156,7 @@ class FeedWorker:
         self._ws_active = True
 
         access_token = f"{self.broker.app_id}:{self.broker.access_token}"
+        logger.info(f"[FEED] 🔑 Using token format: {access_token[:15]}...{access_token[-10:]}")
         
         # Initialize the Fyers DataSocket
         # Set reconnect=False to handle it ourselves with the latest token
