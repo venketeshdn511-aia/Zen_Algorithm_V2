@@ -3,7 +3,10 @@ import os
 import asyncio
 import hashlib
 import httpx
+import base64
+import pyotp
 from typing import Dict, Any, Optional
+from urllib.parse import urlparse, parse_qs
 from fyers_apiv3 import fyersModel
 
 from app.core.config import settings
@@ -62,75 +65,110 @@ class BrokerService:
         """Register a callback to be called when the access token is refreshed."""
         self._on_refresh_callbacks.append(callback)
 
-    async def _refresh_access_token(self) -> bool:
-        """Automated token refresh using manual V3 validation (robust)."""
+    async def _generate_new_access_token(self) -> bool:
+        """Automated TOTP-based login to generate a fresh access_token (April 2026 compliant)."""
         if self._refresh_lock.locked():
-            logger.info("[BROKER] ⏳ Refresh already in progress. Waiting...")
+            logger.info("[BROKER] ⏳ Authentication already in progress. Waiting...")
             await self._refresh_event.wait()
             return True
 
         async with self._refresh_lock:
             self._refresh_event.clear()
+            
+            fy_id = settings.FYERS_USERNAME
+            pin = settings.FYERS_PIN
+            totp_secret = settings.FYERS_TOTP_SECRET
+            
             missing = []
+            if not fy_id: missing.append("FYERS_USERNAME")
+            if not pin: missing.append("FYERS_PIN")
+            if not totp_secret: missing.append("FYERS_TOTP_SECRET")
             if not self.app_id: missing.append("FYERS_APP_ID")
             if not self.secret_id: missing.append("FYERS_SECRET_ID")
-            if not self.refresh_token: missing.append("FYERS_REFRESH_TOKEN")
-            if not self.pin: missing.append("FYERS_PIN")
 
             if missing:
-                logger.error(f"[BROKER] ❌ Cannot refresh: Missing {', '.join(missing)}")
+                logger.error(f"[BROKER] ❌ Cannot authenticate: Missing {', '.join(missing)}")
                 self._refresh_event.set()
                 return False
 
-            logger.info("[BROKER] 🔄 Starting automated token refresh...")
+            logger.info("[BROKER] 🔐 Starting automated TOTP login flow...")
             try:
-                # V3 manual refresh logic (most reliable)
-                hash_input = f"{self.app_id}:{self.secret_id}"
-                app_id_hash = hashlib.sha256(hash_input.encode()).hexdigest()
+                def b64(v: str) -> str:
+                    return base64.b64encode(v.encode()).decode()
 
-                payload = {
-                    "grant_type": "refresh_token",
-                    "appIdHash": app_id_hash,
-                    "refresh_token": self.refresh_token,
-                    "pin": self.pin
-                }
-                
-                url = "https://api-t1.fyers.in/api/v3/validate-refresh-token"
-                async with httpx.AsyncClient() as client:
-                    res = await client.post(url, json=payload, timeout=15.0)
-                    data = res.json()
-                
-                if data.get("s") == "ok":
-                    new_token = data.get("access_token")
+                # 1. login_otp
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    r1 = await client.post("https://api-t2.fyers.in/vagator/v2/send_login_otp_v2", json={
+                        "fy_id": b64(fy_id), "app_id": "2"
+                    })
+                    if r1.status_code != 200: raise Exception(f"Step 1 failed: {r1.text}")
+                    req_key = r1.json().get("request_key")
+
+                    # 2. verify_otp
+                    totp_val = pyotp.TOTP(totp_secret).now()
+                    r2 = await client.post("https://api-t2.fyers.in/vagator/v2/verify_otp", json={
+                        "request_key": req_key, "otp": totp_val
+                    })
+                    if r2.status_code != 200: 
+                        raise Exception(f"Step 2 TOTP verify failed: {r2.text}")
+                    req_key2 = r2.json().get("request_key")
+
+                    # 3. verify_pin
+                    r3 = await client.post("https://api-t2.fyers.in/vagator/v2/verify_pin_v2", json={
+                        "request_key": req_key2, "identity_type": "pin", "identifier": b64(pin)
+                    })
+                    if r3.status_code != 200: raise Exception(f"Step 3 PIN verify failed: {r3.text}")
+                    session_token = r3.json().get("data", {}).get("access_token")
+
+                    # 4. token redirect
+                    if "-" in self.app_id:
+                        app_base, app_type = self.app_id.rsplit("-", 1)
+                    else:
+                        app_base, app_type = self.app_id, "100"
+
+                    client.headers.update({"Authorization": f"Bearer {session_token}"})
+                    r4 = await client.post("https://api-t1.fyers.in/api/v3/token", json={
+                        "fyers_id": fy_id, "app_id": app_base, "redirect_uri": self.redirect_uri,
+                        "appType": app_type, "response_type": "code", "create_cookie": True
+                    }, follow_redirects=False)
+                    
+                    auth_code = None
+                    if r4.status_code in (308, 200):
+                        url = r4.json().get("Url", "")
+                        auth_code = parse_qs(urlparse(url).query).get("auth_code", [""])[0]
+                    
+                    if not auth_code: raise Exception(f"Step 4 (Auth Code) failed: {r4.text}")
+
+                    # 5. finalize
+                    app_hash = hashlib.sha256(f"{self.app_id}:{self.secret_id}".encode()).hexdigest()
+                    r5 = await client.post("https://api-t1.fyers.in/api/v3/validate-authcode", json={
+                        "grant_type": "authorization_code", "appIdHash": app_hash, "code": auth_code
+                    })
+                    if r5.status_code != 200 or r5.json().get("s") == "error": 
+                        raise Exception(f"Step 5 failed: {r5.text}")
+
+                    new_token = r5.json().get("access_token")
                     self.access_token = new_token
-                    
                     self._initialize_client()
-                    
-                    # Persist new token
+
                     if self.mongo:
                         await self.mongo.set_config("fyers_access_token", new_token)
-                        logger.info("[BROKER] 💾 Persisted new access_token to MongoDB.")
                     
                     self._update_env_file(new_token)
-                    logger.info("[BROKER] ✅ Access token refreshed successfully.")
+                    logger.info("[BROKER] ✅ Fresh Access Token generated via TOTP and persisted.")
                     
                     for cb in self._on_refresh_callbacks:
                         try:
-                            if asyncio.iscoroutinefunction(cb):
-                                asyncio.create_task(cb(new_token))
-                            else:
-                                cb(new_token)
+                            if asyncio.iscoroutinefunction(cb): asyncio.create_task(cb(new_token))
+                            else: cb(new_token)
                         except Exception as e:
                             logger.error(f"[BROKER] ⚠️ Callback error: {e}")
-                                
+                    
                     self._refresh_event.set()
                     return True
-                else:
-                    logger.error(f"[BROKER] ❌ Refresh failed: {data}")
-                    self._refresh_event.set()
-                    return False
+
             except Exception as e:
-                logger.error(f"[BROKER] 🛑 Critical refresh error: {repr(e)}")
+                logger.error(f"[BROKER] 🛑 TOTP Login failed: {repr(e)}")
                 self._refresh_event.set()
                 return False
 
@@ -186,12 +224,12 @@ class BrokerService:
                         if response.get("s") == "ok":
                             return response
 
-                logger.warning(f"[BROKER] 🔑 Token expired (code {response.get('code')}). Triggering refresh...")
-                if await self._refresh_access_token():
+                logger.warning(f"[BROKER] 🔑 Token expired (code {response.get('code')}). Triggering TOTP login...")
+                if await self._generate_new_access_token():
                     # Retry once
                     response = await func(*args, **kwargs)
                 else:
-                    raise BrokerError("AUTH_FAILED", "Sync refresh failed")
+                    raise BrokerError("AUTH_FAILED", "TOTP Login failed")
             
             if response.get("s") != "ok":
                 raise BrokerError(str(response.get("code", "ERROR")), response.get("message", "API Request Failed"))

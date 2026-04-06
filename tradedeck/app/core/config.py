@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     FYERS_ACCESS_TOKEN: Optional[str] = None
     FYERS_REFRESH_TOKEN: Optional[str] = None
     FYERS_PIN: Optional[str] = None
+    FYERS_USERNAME: Optional[str] = None
+    FYERS_TOTP_SECRET: Optional[str] = None
     
     MONGO_URI: Optional[str] = None
     
@@ -52,7 +54,8 @@ class Settings(BaseSettings):
             url = f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         # 3. Final fallback to SQLite
         else:
-            if self.IS_RENDER:
+            # On AWS/Render/Docker, we often need a writable path like /tmp for ephemeral SQLite
+            if self.ENV != "local" or self.IS_RENDER:
                 db_dir = "/tmp"
                 os.makedirs(db_dir, exist_ok=True)
                 url = f"sqlite+aiosqlite:///{db_dir}/tradedeck_local.db"
