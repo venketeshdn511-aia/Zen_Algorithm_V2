@@ -217,25 +217,8 @@ class FeedWorker:
             
         if is_expired:
             logger.warning("[FEED] 🔑 Token expired. Triggering proactive refresh...")
-            # Schedule refresh and wait for it; if it fails, back off before reconnect
-            future = asyncio.run_coroutine_threadsafe(
-                self.broker.refresh_access_token(), self._loop
-            )
-            try:
-                success = future.result(timeout=60)  # Wait up to 60s for refresh
-                if not success:
-                    # Refresh failed (bad pin / missing config). Back off 30s to
-                    # avoid hammering Fyers with an invalid token in a tight loop.
-                    logger.error(
-                        "[FEED] ❌ Token refresh failed. Backing off 30s before next reconnect."
-                    )
-                    time.sleep(30)
-            except Exception as exc:
-                import traceback
-                logger.error(
-                    f"[FEED] ❌ Token refresh raised: {exc}.\n{traceback.format_exc()}"
-                )
-                time.sleep(30)
+            # Trigger refresh; _connect_and_receive loop will wait for it via the event
+            asyncio.run_coroutine_threadsafe(self.broker.refresh_access_token(), self._loop)
 
         self._ws_active = False  # Exit the _connect_and_receive loop on error
 
