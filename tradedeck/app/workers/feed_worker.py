@@ -218,7 +218,7 @@ class FeedWorker:
             logger.warning("[FEED] 🔑 Token expired. Triggering proactive refresh...")
             # Schedule refresh and wait for it; if it fails, back off before reconnect
             future = asyncio.run_coroutine_threadsafe(
-                self.broker._refresh_access_token(), self._loop
+                self.broker.refresh_access_token(), self._loop
             )
             try:
                 success = future.result(timeout=20)  # Wait up to 20s for refresh

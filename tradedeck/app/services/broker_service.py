@@ -65,7 +65,7 @@ class BrokerService:
         """Register a callback to be called when the access token is refreshed."""
         self._on_refresh_callbacks.append(callback)
 
-    async def _generate_new_access_token(self) -> bool:
+    async def refresh_access_token(self) -> bool:
         """Automated TOTP-based login to generate a fresh access_token (April 2026 compliant)."""
         if self._refresh_lock.locked():
             logger.info("[BROKER] ⏳ Authentication already in progress. Waiting...")
@@ -225,7 +225,7 @@ class BrokerService:
                             return response
 
                 logger.warning(f"[BROKER] 🔑 Token expired (code {response.get('code')}). Triggering TOTP login...")
-                if await self._generate_new_access_token():
+                if await self.refresh_access_token():
                     # Retry once
                     response = await func(*args, **kwargs)
                 else:
