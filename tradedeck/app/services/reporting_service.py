@@ -27,9 +27,12 @@ class StrategyReportingService:
         self.session_factory = session_factory
         self.mongo_service = mongo_service
 
-        # Override output_dir for read-only Render filesystems if not explicitly provided
+        # Ephemeral environments (Docker/AWS/Render) should use /tmp for writes
         if output_dir is None:
-            self.output_dir = "/tmp/reports" if settings.IS_RENDER else "./reports"
+            if settings.ENV != "local" or settings.IS_RENDER:
+                self.output_dir = "/tmp/reports"
+            else:
+                self.output_dir = "./reports"
         else:
             self.output_dir = output_dir
 
