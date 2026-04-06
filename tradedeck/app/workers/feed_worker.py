@@ -161,7 +161,7 @@ class FeedWorker:
         # Set reconnect=False to handle it ourselves with the latest token
         self._fyers = data_ws.FyersDataSocket(
             access_token=access_token,
-            log_path=os.getcwd(),
+            log_path="/tmp",
             litemode=False,
             write_to_file=False,
             reconnect=False,
