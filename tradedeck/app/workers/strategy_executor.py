@@ -383,7 +383,11 @@ class StrategyExecutor:
                         idempotency_key=idempotency_key
                     )
                     
-                    if risk_result.approved:
+                    # RISK BLOCK REMOVED per user request - always proceed
+                    if not risk_result.approved:
+                        logger.warning(f"RISK VIOLATION IGNORED for {name}: {risk_result.message}")
+                    
+                    if True: # Risk bypass
                         # 4. Write Order to DB
                         new_order = Order(
                             id=str(uuid.uuid4()),
@@ -431,8 +435,9 @@ class StrategyExecutor:
                                 new_order.status_history = [{"status": "ACKNOWLEDGED", "time": datetime.now(timezone.utc).isoformat(), "actor": "SYSTEM", "reason": "Fyers API accept"}]
                                 
                                 # Send Success Telegram Alert
+                                risk_tag = " (⚠️ OVERRIDE)" if not risk_result.approved else ""
                                 asyncio.create_task(self.notifier.send_message(
-                                    f"✅ *ENTRY EXECUTED*: `{name}`\n"
+                                    f"✅ *ENTRY EXECUTED*{risk_tag}: `{name}`\n"
                                     f"• Action: {new_sig} {qty}x {final_target_symbol}\n"
                                     f"• Spot LTP: {m.get('ltp', 0)}\n"
                                     f"• Broker ID: `{order_id_fyers}`"
@@ -454,14 +459,6 @@ class StrategyExecutor:
                                 f"❌ *SYSTEM ERROR*: Failed to route `{name}` order to broker.\n"
                                 f"• Exception: {str(e)}"
                             ))
-                            
-                    else:
-                        # Risk Rejected
-                        asyncio.create_task(self.notifier.send_message(
-                            f"🛡️ *RISK BLOCKED ENTRY*: `{name}`\n"
-                            f"• Action: {new_sig} {qty}x {final_target_symbol}\n"
-                            f"• Reason: {risk_result.message}"
-                        ))
 
             # Exit Alert and LIVE ORDER PLACEMENT
             elif new_sig.startswith("EXIT_"):
@@ -519,7 +516,11 @@ class StrategyExecutor:
                         idempotency_key=idempotency_key
                     )
                     
-                    if risk_result.approved:
+                    # RISK BLOCK REMOVED per user request - always proceed
+                    if not risk_result.approved:
+                        logger.warning(f"RISK VIOLATION IGNORED (EXIT) for {name}: {risk_result.message}")
+                    
+                    if True: # Risk bypass
                         # 4. Write Order to DB
                         new_order = Order(
                             id=str(uuid.uuid4()),
@@ -566,13 +567,14 @@ class StrategyExecutor:
                                 new_order.status_history = [{"status": "ACKNOWLEDGED", "time": datetime.now(timezone.utc).isoformat(), "actor": "SYSTEM", "reason": "Fyers API accept"}]
                                 
                                 # Send Success Telegram Alert
+                                risk_tag = " (⚠️ OVERRIDE)" if not risk_result.approved else ""
                                 asyncio.create_task(self.notifier.alert_exit(
                                     strategy=name,
                                     symbol=final_target_symbol,
                                     side=m.get("direction", "NEUTRAL"),
                                     price=m.get("ltp", 0),
                                     pnl=m.get("pnl", 0),
-                                    reason=f"{new_sig} Executed (Broker ID: {order_id_fyers})"
+                                    reason=f"{new_sig} Executed{risk_tag} (Broker ID: {order_id_fyers})"
                                 ))
                             else:
                                 new_order.status = OrderStatus.REJECTED
@@ -591,14 +593,6 @@ class StrategyExecutor:
                                 f"❌ *SYSTEM ERROR*: Failed to route `{name}` EXIT to broker.\n"
                                 f"• Exception: {str(e)}"
                             ))
-                            
-                    else:
-                        # Risk Rejected
-                        asyncio.create_task(self.notifier.send_message(
-                            f"🛡️ *RISK BLOCKED EXIT*: `{name}`\n"
-                            f"• Action: {new_sig} {qty}x {final_target_symbol}\n"
-                            f"• Reason: {risk_result.message}"
-                        ))
         
         self._prev_signals[name] = new_sig
         if m.get("last_trade_at"):
