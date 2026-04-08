@@ -22,6 +22,7 @@ from app.workers.telegram_worker import TelegramWorker
 from app.strategies.failed_auction import get_strategy as get_failed_auction
 from app.strategies.statistical_sniper import get_strategy as get_stat_sniper
 from app.strategies.ib_production_bridge import get_strategy as get_ib_breakout
+from app.strategies.initial_balance_breakout_strategy import get_strategy as get_ib_scanner
 from app.core.config import settings
 
 # Configure structured logging
@@ -120,6 +121,7 @@ async def lifespan(app: FastAPI):
     executor.register("FAILED_AUCTION_B1", "NSE:NIFTY50-INDEX", get_failed_auction())
     executor.register("STAT_SNIPER_01", "NSE:NIFTY50-INDEX", get_stat_sniper())
     executor.register("IB_BREAKOUT_01", "NSE:NIFTY50-INDEX", get_ib_breakout())
+    executor.register("IB_BREAKOUT_SCANNER", "NSE:NIFTY50-INDEX", get_ib_scanner())
 
     # Wire Feed to Executor
     feed.register_tick_handler(executor.on_tick)

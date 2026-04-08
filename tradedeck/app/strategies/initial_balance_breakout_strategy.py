@@ -369,3 +369,6 @@ class InitialBalanceBreakoutStrategy(StrategyInterface):
             + (f" [{', '.join(side_status)}]" if side_status else "")
         )
         return None
+
+def get_strategy():
+    return InitialBalanceBreakoutStrategy()
