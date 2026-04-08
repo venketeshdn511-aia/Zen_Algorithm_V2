@@ -120,8 +120,6 @@ async def lifespan(app: FastAPI):
     # Note: Use specific instance-bound methods for signals
     executor.register("FAILED_AUCTION_B1", "NSE:NIFTY50-INDEX", get_failed_auction())
     executor.register("STAT_SNIPER_01", "NSE:NIFTY50-INDEX", get_stat_sniper())
-    executor.register("IB_BREAKOUT_01", "NSE:NIFTY50-INDEX", get_ib_breakout())
-    executor.register("IB_BREAKOUT_SCANNER", "NSE:NIFTY50-INDEX", get_ib_scanner())
 
     # Wire Feed to Executor
     feed.register_tick_handler(executor.on_tick)
