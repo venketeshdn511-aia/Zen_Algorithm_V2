@@ -21,6 +21,7 @@ from app.services.mongodb_service import MongoDBService
 from app.workers.telegram_worker import TelegramWorker
 from app.strategies.failed_auction import get_strategy as get_failed_auction
 from app.strategies.statistical_sniper import get_strategy as get_stat_sniper
+from app.strategies.ib_production_bridge import get_strategy as get_ib_breakout
 from app.core.config import settings
 
 # Configure structured logging
@@ -118,6 +119,7 @@ async def lifespan(app: FastAPI):
     # Note: Use specific instance-bound methods for signals
     executor.register("FAILED_AUCTION_B1", "NSE:NIFTY50-INDEX", get_failed_auction())
     executor.register("STAT_SNIPER_01", "NSE:NIFTY50-INDEX", get_stat_sniper())
+    executor.register("IB_BREAKOUT_01", "NSE:NIFTY50-INDEX", get_ib_breakout())
 
     # Wire Feed to Executor
     feed.register_tick_handler(executor.on_tick)
