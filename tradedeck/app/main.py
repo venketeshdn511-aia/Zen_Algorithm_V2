@@ -23,6 +23,7 @@ from app.strategies.failed_auction import get_strategy as get_failed_auction
 from app.strategies.statistical_sniper import get_strategy as get_stat_sniper
 from app.strategies.ib_production_bridge import get_strategy as get_ib_breakout
 from app.strategies.initial_balance_breakout_strategy import get_strategy as get_ib_scanner
+from app.strategies.bb_squeeze_strategy import get_strategy as get_bb_squeeze
 from app.core.config import settings
 
 # Configure structured logging
@@ -119,6 +120,7 @@ async def lifespan(app: FastAPI):
     # Register Strategies
     # Note: Use specific instance-bound methods for signals
     executor.register("STAT_SNIPER_01", "NSE:NIFTY50-INDEX", get_stat_sniper())
+    executor.register("BB_SQUEEZE_01", "NSE:NIFTY50-INDEX", get_bb_squeeze())
 
     # Wire Feed to Executor
     feed.register_tick_handler(executor.on_tick)
