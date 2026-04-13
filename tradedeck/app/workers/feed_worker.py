@@ -64,6 +64,7 @@ class FeedWorker:
         self._tick_handlers = []
         self._loop = None
         self._ws_active = False
+        self._tick_count = 0  # <--- New diagnostic counter
 
         # Register for token refreshes
         self.broker.register_on_refresh(self._handle_token_refresh)
@@ -82,6 +83,7 @@ class FeedWorker:
         self._subscribed = set(symbols)
         self._loop = asyncio.get_running_loop()
         self._task = asyncio.create_task(self._run(), name="feed_worker")
+        asyncio.create_task(self._periodic_tick_log(), name="feed_health_logger")
         logger.info("[FEED] 🚀 Worker starting. Subscribing to %d symbols.", len(symbols))
 
     async def stop(self) -> None:
@@ -141,6 +143,16 @@ class FeedWorker:
                 delay_idx += 1
                 logger.info("[FEED] ⏳ Retrying in %ds...", delay)
                 await asyncio.sleep(delay)
+
+    async def _periodic_tick_log(self) -> None:
+        """Background loop to log feed health to stdout every minute."""
+        while self._running:
+            await asyncio.sleep(60)
+            if self._connected:
+                logger.info(f"[FEED] 💓 Health Check: Received {self._tick_count} ticks in last minute.")
+                self._tick_count = 0 # Reset
+            else:
+                logger.warning("[FEED] 💓 Health Check: WebSocket currently DISCONNECTED.")
 
     async def _connect_and_receive(self) -> None:
         """Single connection lifetime."""
@@ -244,6 +256,7 @@ class FeedWorker:
         now    = datetime.now(timezone.utc)
         now_ts = time.time()
         self._last_tick_ts = now_ts
+        self._tick_count += 1  # <--- Increment counter
 
         # ── Write to Redis (primary, fast path) ───────────────────────────
         if self.redis:

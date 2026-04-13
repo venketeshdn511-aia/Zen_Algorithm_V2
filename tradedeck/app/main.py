@@ -99,6 +99,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[SYSTEM] ⚠️ Could not record startup audit log: {e}")
     
+    # 4. Ensure Feed Heartbeat row exists
+    try:
+        async with async_session() as db:
+            from app.models.db import FeedHeartbeat
+            result = await db.execute(select(FeedHeartbeat).where(FeedHeartbeat.feed_name == "fyers_ws"))
+            if not result.scalar_one_or_none():
+                logger.info("[SYSTEM] 📡 Seeding initial heartbeat row for 'fyers_ws'")
+                db.add(FeedHeartbeat(
+                    feed_name="fyers_ws",
+                    last_tick_at=datetime.now(timezone.utc),
+                    is_connected=False
+                ))
+                await db.commit()
+    except Exception as e:
+        logger.warning(f"[SYSTEM] ⚠️ Could not initialize feed heartbeat row: {e}")
+    
     # Initialize services
     notifier = NotificationService(settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID)
     mongo = MongoDBService(settings.MONGO_URI)

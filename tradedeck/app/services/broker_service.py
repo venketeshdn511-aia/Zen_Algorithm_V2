@@ -255,14 +255,21 @@ class BrokerService:
             raise
 
     async def get_funds(self) -> Dict[str, Any]:
-        """Fetch margin/funds from Fyers V3."""
+        """Fetch margin/funds from Fyers V3 (robust search)."""
         data = await self._api_call(self.client.funds)
         fund_limit = data.get("fund_limit", [])
-        equity_data = next((item for item in fund_limit if item.get("title") == "Total Balance"), {})
+        
+        # Look for the main balance indicator (names can vary by account type)
+        target_titles = ["Total Balance", "Available Balance", "Net Balance", "Available Margin"]
+        equity_data = next(
+            (item for item in fund_limit if item.get("title") in target_titles), 
+            fund_limit[0] if fund_limit else {} # Fallback to first item
+        )
+        
         return {
             "equity": {
-                "available_margin": equity_data.get("equityAmount", 0),
-                "used_margin": equity_data.get("utilizedAmount", 0)
+                "available_margin": float(equity_data.get("equityAmount", 0)),
+                "used_margin": float(equity_data.get("utilizedAmount", 0))
             }
         }
 
