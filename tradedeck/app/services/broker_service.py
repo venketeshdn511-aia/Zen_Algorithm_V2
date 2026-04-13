@@ -5,9 +5,11 @@ import hashlib
 import httpx
 import base64
 import pyotp
-from typing import Dict, Any, Optional
-from urllib.parse import urlparse, parse_qs
 from fyers_apiv3 import fyersModel
+from typing import TYPE_CHECKING, Dict, Any, Optional
+
+if TYPE_CHECKING:
+    from app.services.mongodb_service import MongoDBService
 
 from app.core.config import settings
 
