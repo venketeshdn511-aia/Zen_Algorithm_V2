@@ -96,15 +96,17 @@ async def _get_feed_health(db: AsyncSession, redis_client=None) -> dict:
         )
         row = result.fetchone()
         if row:
-            age_s  = (now - row.last_tick_at).total_seconds()
-            status = "live" if age_s < 1.0 else "stale" if age_s < 3.0 else "dead"
-            return {
-                "age_seconds":  round(age_s, 2),
-                "ws_connected": row.is_connected,
-                "status":       status,
-                "source":       "db_fallback",
-                "last_tick_utc": row.last_tick_at.isoformat(),
-            }
+            last_tick = _parse_ts(row.last_tick_at)
+            if last_tick:
+                age_s  = (now - last_tick).total_seconds()
+                status = "live" if age_s < 1.0 else "stale" if age_s < 3.0 else "dead"
+                return {
+                    "age_seconds":  round(age_s, 2),
+                    "ws_connected": row.is_connected,
+                    "status":       status,
+                    "source":       "db_fallback",
+                    "last_tick_utc": last_tick.isoformat(),
+                }
     except Exception as e:
         logger.error(f"DB feed health check failed: {e}")
 
