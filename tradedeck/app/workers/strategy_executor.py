@@ -305,7 +305,7 @@ class StrategyExecutor:
 
         # INTERCEPT AND RESOLVE OPTIONS LEGS
         target_instrument = m.get("target_instrument")
-        if target_instrument and m.get("signal") in ["BUY", "SELL", "SHORT"]:
+        if target_instrument and (m.get("signal") in ["BUY", "SELL", "SHORT"] or m.get("signal", "").startswith("EXIT_")):
             if target_instrument.get("type") == "OPTION":
                 spot_price = m.get("ltp")
                 leg_type = target_instrument.get("leg") # CE or PE

@@ -313,7 +313,7 @@ class BBSqueezeBreakoutStrategy:
                 "signal": exit_signal,
                 "ltp": ltp,
                 "pnl": round(pnl_pts * NIFTY_LOT_SIZE, 2),
-                "direction": "SHORT",
+                "direction": "LONG",
                 "open_qty": NIFTY_LOT_SIZE,
                 "avg_entry": pos["entry"],
                 "stop_loss": pos["stop_loss"],
@@ -333,7 +333,7 @@ class BBSqueezeBreakoutStrategy:
                 "signal": "HOLDING",
                 "ltp": ltp,
                 "pnl": round(pnl_pts * NIFTY_LOT_SIZE, 2),
-                "direction": "SHORT",
+                "direction": "LONG",
                 "open_qty": NIFTY_LOT_SIZE,
                 "avg_entry": pos["entry"],
                 "stop_loss": pos["stop_loss"],
@@ -372,10 +372,10 @@ class BBSqueezeBreakoutStrategy:
             )
 
             return {
-                "signal": "SELL",
+                "signal": "BUY",
                 "ltp": ltp,
                 "pnl": 0,
-                "direction": "SHORT",
+                "direction": "LONG",
                 "open_qty": NIFTY_LOT_SIZE,
                 "avg_entry": entry_p,
                 "stop_loss": stop_loss,
