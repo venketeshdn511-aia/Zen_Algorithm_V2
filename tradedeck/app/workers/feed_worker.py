@@ -198,7 +198,8 @@ class FeedWorker:
             # Mark connected in DB/Redis after subscription
             asyncio.run_coroutine_threadsafe(self._mark_connected(), self._loop)
 
-    def _on_ws_close(self):
+    def _on_ws_close(self, *args):
+        """Called by Fyers library on close — accepts optional close-code/message args."""
         logger.warning("[FEED] 🔌 WebSocket Connection Closed")
         self._connected = False
         self._ws_active = False  # Exit the _connect_and_receive loop to trigger reconnect
@@ -207,12 +208,16 @@ class FeedWorker:
     def _on_ws_error(self, error):
         logger.error(f"[FEED] 🛑 WebSocket Error: {error}")
         
-        # Proactive Refresh on Token Expiry (-99 is Fyers' WebSocket auth error code)
+        # Proactive Refresh on Token Expiry
+        # -99  = token expired (Fyers REST/WS)
+        # -300 = invalid/bad token (WebSocket auth failure — treat same as expired)
         is_expired = False
         if isinstance(error, dict):
-            if error.get("code") == -99 or "expired" in str(error.get("message", "")).lower():
+            code = error.get("code")
+            msg  = str(error.get("message", "")).lower()
+            if code in (-99, -300) or "expired" in msg or "valid token" in msg:
                 is_expired = True
-        elif "expired" in str(error).lower():
+        elif "expired" in str(error).lower() or "valid token" in str(error).lower():
             is_expired = True
             
         if is_expired:

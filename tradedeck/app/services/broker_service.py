@@ -222,8 +222,10 @@ class BrokerService:
         try:
             response = await func(*args, **kwargs)
             
-            # Token expiry detection (Fyers V3 uses -99 or -300 codes usually)
-            if response.get("s") == "error" and response.get("code") in (-99, -300, -400):
+            # Token expiry detection: -99 = expired, -300 = invalid/bad token, -400 = auth error
+            if response.get("s") == "error" and response.get("code") in (-99, -300, -400, 16):
+                # Also catch message-based auth failures
+
                 # Before refreshing, try to sync from DB in case another worker already did it
                 if self.mongo:
                     db_access = await self.mongo.get_config("fyers_access_token")
