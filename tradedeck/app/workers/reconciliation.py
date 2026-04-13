@@ -127,6 +127,7 @@ class ReconciliationWorker:
                 return log
 
             # ── Success — reset failure counter ───────────────
+            await db.execute(
                 text(
                     "UPDATE trading_sessions SET "
                     "reconcile_failure_count=0, last_reconcile_at=:now, "
@@ -134,6 +135,7 @@ class ReconciliationWorker:
                     "WHERE id=:id"
                 ),
                 {"id": str(session.id), "now": datetime.now(timezone.utc)}
+            )
 
             # ── Reconcile ──────────────────────────────────────
             pm, pc = await self._reconcile_positions(db, session, broker_positions)
@@ -170,7 +172,7 @@ class ReconciliationWorker:
             db.add(log)
             await db.commit()
 
-            log_fn = logger.warning if mismatches else logger.debug
+            log_fn = logger.warning if mismatches else logger.info
             log_fn(
                 "Reconciliation %s: %d pos, %d orders, %d mismatches, %d corrections (%dms)",
                 status, len(broker_positions), len(broker_orders),

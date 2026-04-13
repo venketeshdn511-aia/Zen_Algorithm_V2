@@ -1172,7 +1172,9 @@ export default function App() {
           <div className="tbc">
             <div className="tbc-l">Net P&L</div>
             <div className={`tbc-v ${totalPnl >= 0 ? "up" : "dn"}`}>{f.pnl(totalPnl)}</div>
-            <div className="tbc-s">{((totalPnl / totalAlloc) * 100).toFixed(2)}% on ₹{(totalAlloc / 100000).toFixed(1)}L</div>
+            <div className="tbc-s">
+              {((totalPnl / totalAlloc) * 100).toFixed(2)}% on {totalAlloc >= 100000 ? `₹${(totalAlloc / 100000).toFixed(1)}L` : `₹${totalAlloc.toLocaleString("en-IN")}`}
+            </div>
           </div>
 
           {/* Strategies */}

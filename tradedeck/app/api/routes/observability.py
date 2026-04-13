@@ -522,6 +522,10 @@ async def get_infra(
         recon_status = "unknown"
         recon_last = "—"
 
+    # Feed status for topbar/heartbeat
+    redis = getattr(request.app.state, "redis", None)
+    feed  = await _get_feed_health(db, redis)
+
     return {
         "ts":      datetime.now(timezone.utc).isoformat(),
         "process": {
@@ -549,6 +553,8 @@ async def get_infra(
             "exhausted":        pool_stats["checked_out"] >= pool_stats["size"],
         },
         "redis": redis_stats,
+        "ws_heartbeat": feed.get("age_seconds", 0),
+        "last_tick": feed.get("last_tick_utc", None),
     }
 
 
