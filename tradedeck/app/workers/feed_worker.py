@@ -253,7 +253,7 @@ class FeedWorker:
 
     async def _on_tick(self, tick: dict) -> None:
         """Called on every tick. Critical path — must be fast."""
-        now    = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         now_ts = time.time()
         self._last_tick_ts = now_ts
         self._tick_count += 1  # <--- Increment counter
@@ -293,7 +293,7 @@ class FeedWorker:
                         "  last_tick_at=:ts, is_connected=true, updated_at=:now "
                         "WHERE feed_name='fyers_ws'"
                     ),
-                    {"ts": ts, "now": datetime.now(timezone.utc)}
+                    {"ts": ts, "now": datetime.now(timezone.utc).replace(tzinfo=None)}
                 )
                 await db.commit()
         except Exception as e:
@@ -310,7 +310,7 @@ class FeedWorker:
             async with self.session_factory() as db:
                 await db.execute(
                     text("UPDATE feed_heartbeat SET is_connected=true, updated_at=:now WHERE feed_name='fyers_ws'"),
-                    {"now": datetime.now(timezone.utc)}
+                    {"now": datetime.now(timezone.utc).replace(tzinfo=None)}
                 )
                 await db.commit()
         except Exception as e:
@@ -330,7 +330,7 @@ class FeedWorker:
                         "UPDATE feed_heartbeat SET is_connected=false, updated_at=:now "
                         "WHERE feed_name='fyers_ws'"
                     ),
-                    {"now": datetime.now(timezone.utc)}
+                    {"now": datetime.now(timezone.utc).replace(tzinfo=None)}
                 )
                 await db.commit()
         except Exception as e:

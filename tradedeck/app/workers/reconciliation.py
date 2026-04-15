@@ -134,7 +134,7 @@ class ReconciliationWorker:
                     "last_reconcile_status='OK', updated_at=:now "
                     "WHERE id=:id"
                 ),
-                {"id": str(session.id), "now": datetime.now(timezone.utc)}
+                {"id": str(session.id), "now": datetime.now(timezone.utc).replace(tzinfo=None)}
             )
 
             # ── Reconcile ──────────────────────────────────────
@@ -212,7 +212,7 @@ class ReconciliationWorker:
                         "reconcile_status='CORRECTED', last_reconciled_at=:now "
                         "WHERE id=:id"
                     ),
-                    {"qty": broker_qty, "bq": broker_qty, "id": str(pos.id), "now": datetime.now(timezone.utc)}
+                    {"qty": broker_qty, "bq": broker_qty, "id": str(pos.id), "now": datetime.now(timezone.utc).replace(tzinfo=None)}
                 )
                 corrections.append({"symbol": pos.symbol, "action": "QTY_SYNCED", "to": broker_qty})
             else:
@@ -223,7 +223,7 @@ class ReconciliationWorker:
                         "UPDATE positions SET ltp=:ltp, broker_quantity=:bq, "
                         "reconcile_status='OK', last_reconciled_at=:now WHERE id=:id"
                     ),
-                    {"ltp": ltp, "bq": broker_qty, "id": str(pos.id), "now": datetime.now(timezone.utc)}
+                    {"ltp": ltp, "bq": broker_qty, "id": str(pos.id), "now": datetime.now(timezone.utc).replace(tzinfo=None)}
                 )
 
         await db.flush()
@@ -286,7 +286,7 @@ class ReconciliationWorker:
                         "ap": broker_order["avg_price"],
                         "h":  json.dumps(history),
                         "id": str(order.id),
-                        "now": datetime.now(timezone.utc)
+                        "now": datetime.now(timezone.utc).replace(tzinfo=None)
                     }
                 )
                 corrections.append({"order_id": str(order.id), "action": f"STATUS→{target_status}"})
@@ -302,7 +302,7 @@ class ReconciliationWorker:
         broker_map  = {o["broker_order_id"]: o for o in broker_orders}
 
         from datetime import timedelta
-        sent_cutoff = datetime.now(timezone.utc) - timedelta(seconds=60)
+        sent_cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=60)
         result = await db.execute(
             text(
                 "SELECT id, broker_order_id, status, sent_at, created_at, status_history "
@@ -333,7 +333,7 @@ class ReconciliationWorker:
                     "h":  json.dumps(history),
                     "r":  "Recovered from orphaned state by reconciliation",
                     "id": str(order.id),
-                    "now": datetime.now(timezone.utc)
+                    "now": datetime.now(timezone.utc).replace(tzinfo=None)
                 }
             )
             corrections.append({"order_id": str(order.id), "action": f"ORPHAN→{resolved}"})
@@ -354,7 +354,7 @@ class ReconciliationWorker:
                 "updated_at=:now "
                 "WHERE id=:id RETURNING reconcile_failure_count"
             ),
-            {"id": str(session.id), "now": datetime.now(timezone.utc)}
+            {"id": str(session.id), "now": datetime.now(timezone.utc).replace(tzinfo=None)}
         )
         row = result.fetchone()
         return row[0] if row else 1
