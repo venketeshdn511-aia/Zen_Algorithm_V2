@@ -210,12 +210,20 @@ class StrategyControlService:
         intent: str,
         intent_set_at: datetime,
     ) -> dict:
-        """Poll DB until executor clears the intent or timeout."""
+        """Poll DB until executor clears the intent or timeout.
+        
+        IMPORTANT: We must expire the session after each poll to force
+        re-fetching from DB. Without this, SQLAlchemy returns stale cached
+        data and the ack is never detected.
+        """
         deadline = datetime.now(timezone.utc) + timedelta(seconds=ACK_TIMEOUT_S)
         expected_status = INTENT_RESULT[intent]
 
         while datetime.now(timezone.utc) < deadline:
             await asyncio.sleep(ACK_POLL_MS / 1000)
+
+            # Expire all cached objects so next query hits the DB
+            await db.run_sync(lambda s: s.expire_all())
 
             row = await self._get_strategy(db, strategy_name)
             if not row:
@@ -248,8 +256,19 @@ class StrategyControlService:
                             "latency_ms": latency_ms,
                             "final_status": row.status,
                         }
+                else:
+                    # acked_at is None but intent is cleared and status matches — count as acked
+                    latency_ms = round(
+                        (datetime.now(timezone.utc) - intent_set_at).total_seconds() * 1000
+                    )
+                    return {
+                        "acked": True,
+                        "latency_ms": latency_ms,
+                        "final_status": row.status,
+                    }
 
         return {"acked": False, "latency_ms": None, "final_status": None}
+
 
     async def _get_strategy(self, db: AsyncSession, name: str):
         result = await db.execute(

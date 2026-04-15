@@ -281,20 +281,24 @@ class StrategyExecutor:
         await asyncio.sleep(delay_s)
         async with self.session_factory() as db:
             from datetime import datetime, timezone
+            # Use ORM instead of raw SQL with RETURNING (PostgreSQL-only)
             result = await db.execute(
-                text(
-                    "UPDATE strategy_states SET status='running', error_message=NULL, "
-                    "error_trace=NULL, restart_count=restart_count+1, "
-                    "started_at=:start_time, updated_at=:now "
-                    "WHERE strategy_name=:n AND status='error' RETURNING restart_count"
-                ),
-                {"n": name, "start_time": datetime.now(timezone.utc).isoformat(), "now": datetime.now(timezone.utc)}
+                select(StrategyState).where(
+                    StrategyState.strategy_name == name,
+                    StrategyState.status == "error"
+                )
             )
-            row = result.fetchone()
-            if row:
-                self._status_cache[name] = "running"
+            strategy = result.scalar_one_or_none()
+            if strategy:
+                strategy.status = "running"
+                strategy.error_message = None
+                strategy.error_trace = None
+                strategy.restart_count = (strategy.restart_count or 0) + 1
+                strategy.started_at = datetime.now(timezone.utc)
+                strategy.updated_at = datetime.now(timezone.utc)
                 await db.commit()
-                logger.info("Auto-restarted '%s' (attempt %d).", name, row.restart_count)
+                self._status_cache[name] = "running"
+                logger.info("Auto-restarted '%s' (attempt %d).", name, strategy.restart_count)
 
     async def _update_metrics(self, db: AsyncSession, name: str, m: dict) -> None:
         result = await db.execute(

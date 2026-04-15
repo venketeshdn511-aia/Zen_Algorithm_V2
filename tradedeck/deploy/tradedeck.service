@@ -1,0 +1,16 @@
+[Unit]
+Description=TradeDeck v2 Docker Stack
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/tradedeck-v2-production/tradedeck
+ExecStart=/usr/bin/docker-compose up
+ExecStop=/usr/bin/docker-compose down
+Restart=always
+User=ubuntu
+EnvironmentFile=/home/ubuntu/tradedeck-v2-production/tradedeck/.env
+
+[Install]
+WantedBy=multi-user.target

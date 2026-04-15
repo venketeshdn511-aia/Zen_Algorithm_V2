@@ -181,17 +181,37 @@ from app.api.routes import health, observability
 app.include_router(health.router)
 app.include_router(observability.router)
 
-# Enable CORS for local development
+# Enable CORS — allow all origins in production (AWS/Render/Docker)
+# The frontend is served from the same origin via Nginx reverse proxy,
+# so wildcard is safe here. Restrict further if embedding in a 3rd-party site.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,   # Must be False when allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 import os
+import traceback
+from fastapi import Request as FastAPIRequest
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+# ── Global exception handler — surfaces actual errors instead of blank 500s ──
+@app.exception_handler(Exception)
+async def global_exception_handler(request: FastAPIRequest, exc: Exception):
+    tb = traceback.format_exc()
+    logger.error(f"[UNHANDLED] {request.method} {request.url} → {exc}\n{tb}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "detail": str(exc),
+            "type": type(exc).__name__,
+            "path": str(request.url.path),
+        }
+    )
 
 @app.get("/metrics")
 async def metrics():
