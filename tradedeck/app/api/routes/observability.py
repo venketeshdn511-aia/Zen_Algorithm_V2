@@ -73,6 +73,10 @@ async def _get_feed_health(db: AsyncSession, redis_client=None) -> dict:
             raw = await redis_client.get("tradedeck:last_tick_ts")
             if raw:
                 last_tick = datetime.fromisoformat(raw.decode())
+                # Strip timezone if present to avoid math crash
+                if last_tick.tzinfo:
+                    last_tick = last_tick.replace(tzinfo=None)
+                
                 age_s     = (now - last_tick).total_seconds()
                 ws_conn   = bool(await redis_client.get("tradedeck:ws_connected"))
                 status    = "live" if age_s < 1.0 else "stale" if age_s < 3.0 else "dead"
@@ -98,6 +102,8 @@ async def _get_feed_health(db: AsyncSession, redis_client=None) -> dict:
         if row:
             last_tick = _parse_ts(row.last_tick_at)
             if last_tick:
+                if last_tick.tzinfo:
+                    last_tick = last_tick.replace(tzinfo=None)
                 age_s  = (now - last_tick).total_seconds()
                 status = "live" if age_s < 1.0 else "stale" if age_s < 3.0 else "dead"
                 return {
@@ -430,6 +436,7 @@ async def get_strategies(
         )
     )
     rows = result.fetchall()
+    logger.info(f"[API] Found {len(rows)} rows in strategy_states")
 
     strategies = []
     for r in rows:
@@ -470,6 +477,8 @@ async def get_strategies(
             "restart_count":  r.restart_count,
             "auto_restart":   r.auto_restart,
         })
+    
+    logger.info(f"[API] Returning {len(strategies)} strategies to UI")
 
     return {
         "ts":         datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
