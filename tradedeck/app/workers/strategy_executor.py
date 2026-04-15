@@ -170,14 +170,14 @@ class StrategyExecutor:
             if intent == "stop":
                 strategy.auto_restart = False
             elif intent in ("resume", "start"):
-                strategy.started_at = datetime.now(timezone.utc)
+                strategy.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 strategy.error_message = None
             
             # Update the ORM record
             strategy.status = new_status
             strategy.control_intent = None # Clear the intent
-            strategy.intent_acked_at = datetime.now(timezone.utc)
-            strategy.updated_at = datetime.now(timezone.utc)
+            strategy.intent_acked_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            strategy.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             
             # Update in-memory cache
             self._status_cache[name] = new_status
@@ -294,8 +294,8 @@ class StrategyExecutor:
                 strategy.error_message = None
                 strategy.error_trace = None
                 strategy.restart_count = (strategy.restart_count or 0) + 1
-                strategy.started_at = datetime.now(timezone.utc)
-                strategy.updated_at = datetime.now(timezone.utc)
+                strategy.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                strategy.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 await db.commit()
                 self._status_cache[name] = "running"
                 logger.info("Auto-restarted '%s' (attempt %d).", name, strategy.restart_count)
@@ -434,8 +434,8 @@ class StrategyExecutor:
                                 order_id_fyers = broker_resp.get("id")
                                 new_order.broker_order_id = order_id_fyers
                                 new_order.status = OrderStatus.ACKNOWLEDGED
-                                new_order.sent_at = datetime.now(timezone.utc)
-                                new_order.acked_at = datetime.now(timezone.utc)
+                                new_order.sent_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                                new_order.acked_at = datetime.now(timezone.utc).replace(tzinfo=None)
                                 new_order.status_history = [{"status": "ACKNOWLEDGED", "time": datetime.now(timezone.utc).isoformat(), "actor": "SYSTEM", "reason": "Fyers API accept"}]
                                 
                                 # Send Success Telegram Alert
@@ -566,8 +566,8 @@ class StrategyExecutor:
                                 order_id_fyers = broker_resp.get("id")
                                 new_order.broker_order_id = order_id_fyers
                                 new_order.status = OrderStatus.ACKNOWLEDGED
-                                new_order.sent_at = datetime.now(timezone.utc)
-                                new_order.acked_at = datetime.now(timezone.utc)
+                                new_order.sent_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                                new_order.acked_at = datetime.now(timezone.utc).replace(tzinfo=None)
                                 new_order.status_history = [{"status": "ACKNOWLEDGED", "time": datetime.now(timezone.utc).isoformat(), "actor": "SYSTEM", "reason": "Fyers API accept"}]
                                 
                                 # Send Success Telegram Alert
