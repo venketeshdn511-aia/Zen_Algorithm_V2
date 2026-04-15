@@ -106,7 +106,8 @@ class StrategyControlService:
                 f"Strategy has unacknowledged intent '{row.control_intent}'. Wait for executor to ack."
             )
 
-        intent_set_at = datetime.now(timezone.utc)
+        # asyncpg requires offset-naive datetimes for TIMESTAMP WITHOUT TIME ZONE columns
+        intent_set_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # ── 2. Write intent atomically ────────────────────────────────────
         await db.execute(
