@@ -65,7 +65,7 @@ async def _get_feed_health(db: AsyncSession, redis_client=None) -> dict:
     Never hardcodes. If Redis and DB both fail → status="unknown", which
     causes the UI to show a warning, not a false green.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # ── Try Redis first (sub-millisecond) ─────────────────────────────────
     if redis_client:
@@ -335,7 +335,10 @@ async def get_telemetry(
         recon_lag = None
         lr_ts = _parse_ts(sess.last_reconcile_at) if sess else None
         if lr_ts:
-            recon_lag = round((datetime.now(timezone.utc) - lr_ts).total_seconds())
+            # Ensure lr_ts is naive if now is naive
+            if lr_ts.tzinfo:
+                lr_ts = lr_ts.replace(tzinfo=None)
+            recon_lag = round((datetime.now(timezone.utc).replace(tzinfo=None) - lr_ts).total_seconds())
 
         # ── Strategy counts ────────────────────────────────────────────────────
         strat_counts = (await db.execute(
@@ -365,7 +368,7 @@ async def get_telemetry(
         margin_at_risk  = open_lots * 25000  # Approximate SPAN
 
         return {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             "session": {
                 "day_pnl":       day_pnl,
                 "loss_pct":      loss_pct,
@@ -399,7 +402,7 @@ async def get_telemetry(
         }
     except Exception as e:
         with open("emergency_trace.log", "a") as f:
-            f.write(f"\n--- {datetime.now(timezone.utc)} ---\n")
+            f.write(f"\n--- {datetime.now(timezone.utc).replace(tzinfo=None) } ---\n")
             f.write(traceback.format_exc())
             f.write("\n")
         raise HTTPException(status_code=500, detail=str(e))
@@ -469,7 +472,7 @@ async def get_strategies(
         })
 
     return {
-        "ts":         datetime.now(timezone.utc).isoformat(),
+        "ts":         datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "strategies": strategies,
     }
 
@@ -514,7 +517,10 @@ async def get_infra(
         
         recon_status = sess.last_reconcile_status if sess else "unknown"
         if sess and sess.last_reconcile_at:
-            lag = round((datetime.now(timezone.utc) - sess.last_reconcile_at).total_seconds())
+            lr_at = sess.last_reconcile_at
+            if lr_at.tzinfo:
+                lr_at = lr_at.replace(tzinfo=None)
+            lag = round((datetime.now(timezone.utc).replace(tzinfo=None) - lr_at).total_seconds())
             recon_last = f"{lag}s ago"
         else:
             recon_last = "—"
@@ -527,7 +533,7 @@ async def get_infra(
     feed  = await _get_feed_health(db, redis)
 
     return {
-        "ts":      datetime.now(timezone.utc).isoformat(),
+        "ts":      datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "process": {
             "uptime_seconds": uptime_s,
             "uptime_human":   f"{hours}h {mins:02d}m",
@@ -585,7 +591,7 @@ async def get_exposure(
         max_theo_loss  = sum(abs(p.net_quantity) * p.ltp * 0.10 for p in pos_rows if p.ltp)
 
         return {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             "summary": {
                 "open_positions":  len(pos_rows),
                 "open_lots":       open_lots,
@@ -608,7 +614,7 @@ async def get_exposure(
         }
     except Exception as e:
         with open("emergency_trace.log", "a") as f:
-            f.write(f"\n--- {datetime.now(timezone.utc)} ---\n")
+            f.write(f"\n--- {datetime.now(timezone.utc).replace(tzinfo=None) } ---\n")
             f.write(traceback.format_exc())
             f.write("\n")
         raise HTTPException(status_code=500, detail=str(e))
@@ -780,7 +786,7 @@ async def get_control_log(
     )).fetchall()
 
     return {
-        "ts":  datetime.now(timezone.utc).isoformat(),
+        "ts":  datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "log": [
             {
                 "strategy":       r.strategy_name,
@@ -814,7 +820,7 @@ async def get_orders(
     )).fetchall()
 
     return {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "orders": [
             {
                 "id":     r.id,
@@ -877,6 +883,6 @@ async def get_logs(
         })
 
     return {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "logs": logs
     }

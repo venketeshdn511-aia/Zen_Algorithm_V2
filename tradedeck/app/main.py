@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
         async with engine.begin() as conn:
             await conn.execute(
                 text("INSERT INTO audit_logs (id, event_type, created_at) VALUES (:i, :e, :ts)"),
-                {"i": str(uuid.uuid4()), "e": "SYSTEM_STARTUP", "ts": datetime.now(timezone.utc)}
+                {"i": str(uuid.uuid4()), "e": "SYSTEM_STARTUP", "ts": datetime.now(timezone.utc).replace(tzinfo=None)}
             )
         logger.info("[SYSTEM] 📝 Startup audit log recorded.")
     except Exception as e:
@@ -108,7 +108,7 @@ async def lifespan(app: FastAPI):
                 logger.info("[SYSTEM] 📡 Seeding initial heartbeat row for 'fyers_ws'")
                 db.add(FeedHeartbeat(
                     feed_name="fyers_ws",
-                    last_tick_at=datetime.now(timezone.utc),
+                    last_tick_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     is_connected=False
                 ))
                 await db.commit()
