@@ -113,7 +113,7 @@ class ResourceMonitor:
                 logger.error("Resource monitor sample error: %s", e, exc_info=True)
 
     async def _sample(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # ── Collect metrics ────────────────────────────────────────────────
         mem   = self._proc.memory_info()

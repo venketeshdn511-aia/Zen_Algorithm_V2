@@ -217,10 +217,10 @@ class StrategyControlService:
         re-fetching from DB. Without this, SQLAlchemy returns stale cached
         data and the ack is never detected.
         """
-        deadline = datetime.now(timezone.utc) + timedelta(seconds=ACK_TIMEOUT_S)
+        deadline = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=ACK_TIMEOUT_S)
         expected_status = INTENT_RESULT[intent]
 
-        while datetime.now(timezone.utc) < deadline:
+        while datetime.now(timezone.utc).replace(tzinfo=None) < deadline:
             await asyncio.sleep(ACK_POLL_MS / 1000)
 
             # Expire all cached objects so next query hits the DB
@@ -260,7 +260,7 @@ class StrategyControlService:
                 else:
                     # acked_at is None but intent is cleared and status matches — count as acked
                     latency_ms = round(
-                        (datetime.now(timezone.utc) - intent_set_at).total_seconds() * 1000
+                        (datetime.now(timezone.utc).replace(tzinfo=None) - intent_set_at).total_seconds() * 1000
                     )
                     return {
                         "acked": True,

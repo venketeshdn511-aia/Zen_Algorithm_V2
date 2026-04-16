@@ -126,7 +126,7 @@ class CircuitBreaker:
         # report success/failure automatically
         """
         state = await self._get_or_create_state(db)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         allowed = False
         success = False
 
