@@ -269,6 +269,51 @@ class BrokerService:
                 self._refresh_event.set()
                 return False
 
+    async def set_access_token_from_auth_code(self, auth_code: str) -> bool:
+        """Manually validate an auth_code and update the system with the new access_token."""
+        try:
+            app_hash = hashlib.sha256(f"{self.app_id}:{self.secret_id}".encode()).hexdigest()
+            logger.info(f"[BROKER] 🔑 Validating manual auth_code with hash {app_hash[:10]}...")
+            
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                r5 = await client.post("https://api-t1.fyers.in/api/v3/validate-authcode", json={
+                    "grant_type": "authorization_code", "appIdHash": app_hash, "code": auth_code
+                })
+                
+                if r5.status_code != 200 or r5.json().get("s") == "error":
+                    logger.error(f"[BROKER] ❌ Manual validation failed: {r5.text}")
+                    return False
+
+                new_token = r5.json().get("access_token")
+                self.access_token = new_token
+                self._initialize_client()
+
+                if self.mongo:
+                    await self.mongo.set_config("fyers_access_token", new_token)
+                
+                self._update_env_file(new_token)
+                
+                # Cleanup cooldowns if they existed
+                if self.redis:
+                    try:
+                        await self.redis.delete("fyers:last_login_fail")
+                        await self.redis.set("fyers:login_cooldown", "60")
+                    except: pass
+                
+                # Call callbacks
+                for cb in self._on_refresh_callbacks:
+                    try:
+                        if asyncio.iscoroutinefunction(cb): asyncio.create_task(cb(new_token))
+                        else: cb(new_token)
+                    except Exception as e:
+                        logger.error(f"[BROKER] ⚠️ Callback error: {e}")
+                
+                logger.info("[BROKER] ✅ Manual Access Token updated and persisted.")
+                return True
+        except Exception as e:
+            logger.error(f"[BROKER] 🛑 Manual validation error: {repr(e)}")
+            return False
+
     def _update_env_file(self, new_token: str):
         """Update .env file with new access token."""
         try:

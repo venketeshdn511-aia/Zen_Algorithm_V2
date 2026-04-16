@@ -151,7 +151,7 @@ async def lifespan(app: FastAPI):
     reconciler = ReconciliationWorker(broker, risk, async_session)
     executor = StrategyExecutor(async_session, broker, risk, notifier=notifier)
     feed = FeedWorker(broker, async_session, redis_client=getattr(app.state, "redis", None))
-    tg_worker = TelegramWorker(notifier, reporting)
+    tg_worker = TelegramWorker(notifier, reporting, broker=broker)
 
     # Register Strategies
     # Note: Use specific instance-bound methods for signals
