@@ -73,6 +73,15 @@ class BrokerService:
         
         self._initialize_client()
 
+        # STARTUP PRE-FLIGHT CHECK: Force an API call to ensure token is valid.
+        # This triggers the automated TOTP redirect/login immediately on boot.
+        try:
+            logger.info("[BROKER] 🛡️ Performing startup connectivity check...")
+            await self.get_funds()
+            logger.info("[BROKER] ✅ Startup connectivity check passed.")
+        except Exception as e:
+            logger.warning(f"[BROKER] ⚠️ Startup connectivity check triggered re-auth or failed: {e}")
+
     def register_on_refresh(self, callback):
         """Register a callback to be called when the access token is refreshed."""
         self._on_refresh_callbacks.append(callback)
