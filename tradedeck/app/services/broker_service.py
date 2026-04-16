@@ -22,7 +22,7 @@ class BrokerError(Exception):
         super().__init__(message)
 
 class BrokerService:
-    def __init__(self, mongo_service: Optional["MongoDBService"] = None):
+    def __init__(self, mongo_service: Optional["MongoDBService"] = None, redis_client=None):
         self.app_id = settings.FYERS_APP_ID
         self.secret_id = settings.FYERS_SECRET_ID
         self.access_token = settings.FYERS_ACCESS_TOKEN
@@ -31,10 +31,15 @@ class BrokerService:
         self.redirect_uri = settings.FYERS_REDIRECT_URI
         
         self.mongo = mongo_service
+        self.redis = redis_client
         self._on_refresh_callbacks = []
         self._refresh_lock = asyncio.Lock()
         self._refresh_event = asyncio.Event()
         self._refresh_event.set() # Initially idle
+        
+        self._last_refresh_fail_at = 0.0
+        self._cooldown_seconds = 60
+        self._rate_limit_cooldown = 300
         
         # We don't initialize client here because we need to sync from DB first
         self.client = None
@@ -104,11 +109,66 @@ class BrokerService:
                     return base64.b64encode(v.encode()).decode()
 
                 # 1. login_otp
+                import time
                 async with httpx.AsyncClient(timeout=15.0) as client:
+                    # Global Redis Cooldown Check
+                    now_ts = time.time()
+                    if self.redis:
+                        try:
+                            fail_ts_raw = await self.redis.get("fyers:last_login_fail")
+                            if fail_ts_raw:
+                                fail_ts = float(fail_ts_raw)
+                                cooldown_raw = await self.redis.get("fyers:login_cooldown")
+                                cooldown = int(cooldown_raw) if cooldown_raw else 60
+                                
+                                elapsed = now_ts - fail_ts
+                                if elapsed < cooldown:
+                                    wait_remain = int(cooldown - elapsed)
+                                    logger.warning(f"[BROKER] [COOLDOWN] Global cooldown active (Redis). Skipping refresh for {wait_remain}s.")
+                                    self._refresh_event.set()
+                                    return False
+                        except Exception as e:
+                            logger.warning(f"[BROKER] Redis cooldown check failed: {e}")
+
+                    # Local memory cooldown fallback
+                    elapsed = now_ts - self._last_refresh_fail_at
+                    if elapsed < self._cooldown_seconds:
+                        wait_remain = int(self._cooldown_seconds - elapsed)
+                        logger.warning(f"[BROKER] [COOLDOWN] Local cooldown active. Skipping login retry for {wait_remain}s.")
+                        self._refresh_event.set()
+                        return False
+
+                    # Check MongoDB one more time inside the lock - someone else might have refreshed
+                    if self.mongo:
+                        db_access = await self.mongo.get_config("fyers_access_token")
+                        if db_access and db_access != self.access_token:
+                            logger.info("[BROKER] 🔄 Detected fresh token in MongoDB during lock. Syncing...")
+                            self.access_token = db_access
+                            self._initialize_client()
+                            self._refresh_event.set()
+                            return True
+
+                    logger.info("[BROKER] 🔐 Starting automated TOTP login flow...")
+
                     r1 = await client.post("https://api-t2.fyers.in/vagator/v2/send_login_otp_v2", json={
                         "fy_id": b64(fy_id), "app_id": "2"
                     })
-                    if r1.status_code != 200: raise Exception(f"Step 1 failed: {r1.text}")
+                    if r1.status_code != 200:
+                        error_text = r1.text
+                        if "rate limited" in error_text.lower() or "1015" in error_text or r1.status_code == 429:
+                            self._cooldown_seconds = self._rate_limit_cooldown
+                            logger.error("[BROKER] [RATE_LIMIT] Fyers/Cloudflare Rate Limit detected. Extending cooldown to 5 minutes.")
+                        else:
+                            self._cooldown_seconds = 60 # Default
+                        
+                        self._last_refresh_fail_at = time.time()
+                        if self.redis:
+                            try:
+                                await self.redis.set("fyers:last_login_fail", str(self._last_refresh_fail_at))
+                                await self.redis.set("fyers:login_cooldown", str(self._cooldown_seconds))
+                            except: pass
+
+                        raise Exception(f"Step 1 failed: {error_text}")
                     req_key = r1.json().get("request_key")
                     logger.info("[BROKER] 🔑 Step 1: Login OTP sent.")
 
@@ -166,6 +226,13 @@ class BrokerService:
                         await self.mongo.set_config("fyers_access_token", new_token)
                     
                     self._update_env_file(new_token)
+                    self._last_refresh_fail_at = 0.0
+                    self._cooldown_seconds = 60
+                    if self.redis:
+                        try:
+                            await self.redis.delete("fyers:last_login_fail")
+                            await self.redis.set("fyers:login_cooldown", "60")
+                        except: pass
                     logger.info("[BROKER] ✅ Fresh Access Token generated via TOTP and persisted.")
                     
                     for cb in self._on_refresh_callbacks:
@@ -180,6 +247,9 @@ class BrokerService:
 
             except Exception as e:
                 logger.error(f"[BROKER] 🛑 TOTP Login failed: {repr(e)}")
+                # Ensure we record failure time even for later steps to maintain cooldown
+                if self._last_refresh_fail_at == 0 or (time.time() - self._last_refresh_fail_at > 10):
+                    self._last_refresh_fail_at = time.time()
                 self._refresh_event.set()
                 return False
 

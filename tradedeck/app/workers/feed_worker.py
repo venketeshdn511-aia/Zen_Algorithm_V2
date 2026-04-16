@@ -158,6 +158,18 @@ class FeedWorker:
         """Single connection lifetime."""
         from fyers_apiv3.FyersWebsocket import data_ws
 
+        # Force token re-sync from MongoDB before connecting
+        # This catches manual token updates made via scripts/DB
+        if self.broker.mongo:
+            try:
+                db_access = await self.broker.mongo.get_config("fyers_access_token")
+                if db_access and db_access != self.broker.access_token:
+                    logger.info("[FEED] 🔄 Syncing fresh token from MongoDB before connection...")
+                    self.broker.access_token = db_access
+                    self.broker._initialize_client()
+            except Exception as e:
+                logger.warning(f"[FEED] Token re-sync failed: {e}")
+
         # Wait if a token refresh is in progress
         if not self.broker._refresh_event.is_set():
             logger.info("[FEED] ⏳ Waiting for broker refresh to complete...")
@@ -187,8 +199,13 @@ class FeedWorker:
         self._fyers.connect()
         
         # Keep the coroutine alive while connection is active
+        # If we disconnect too quickly (e.g. auth error), raise exception to trigger backoff
+        start_time = time.time()
         while self._running and self._ws_active:
             await asyncio.sleep(0.5)
+        
+        if self._running and (time.time() - start_time < 5.0):
+            raise Exception("WebSocket disconnected prematurely (likely auth failure or rate limit)")
         
         if hasattr(self, "_fyers"):
             # self._fyers.close() # Library usually handles this via reconnect=True

@@ -1,5 +1,6 @@
 import logging
 import uuid
+import redis.asyncio as redis
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from fastapi import FastAPI, Request
@@ -115,13 +116,32 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[SYSTEM] ⚠️ Could not initialize feed heartbeat row: {e}")
     
+    # 3.5 Initialize Redis for global coordination (April 2026 fix)
+    try:
+        if settings.REDIS_URL:
+            redis_client = redis.from_url(
+                settings.REDIS_URL,
+                password=settings.REDIS_PASSWORD,
+                encoding="utf-8",
+                decode_responses=True
+            )
+            await redis_client.ping()
+            app.state.redis = redis_client
+            logger.info("[SYSTEM] 🟢 Redis connected and registered to app.state")
+        else:
+            app.state.redis = None
+            logger.warning("[SYSTEM] ⚠️ REDIS_URL not found; skipping Redis initialization")
+    except Exception as e:
+        logger.warning(f"[SYSTEM] ⚠️ Could not connect to Redis: {e}")
+        app.state.redis = None
+
     # Initialize services
     notifier = NotificationService(settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID)
     mongo = MongoDBService(settings.MONGO_URI)
     await mongo.connect() # Connect MongoDB early as BrokerService might need it
     
-    # Initialize broker with mongo and call .initialize() to sync tokens
-    broker = BrokerService(mongo_service=mongo)
+    # Initialize broker with mongo and redis, then call .initialize() to sync tokens
+    broker = BrokerService(mongo_service=mongo, redis_client=getattr(app.state, "redis", None))
     await broker.initialize()
 
     risk = RiskEngine(broker)
@@ -130,7 +150,7 @@ async def lifespan(app: FastAPI):
     # Initialize Workers
     reconciler = ReconciliationWorker(broker, risk, async_session)
     executor = StrategyExecutor(async_session, broker, risk, notifier=notifier)
-    feed = FeedWorker(broker, async_session)
+    feed = FeedWorker(broker, async_session, redis_client=getattr(app.state, "redis", None))
     tg_worker = TelegramWorker(notifier, reporting)
 
     # Register Strategies
@@ -162,6 +182,8 @@ async def lifespan(app: FastAPI):
     # Cleanup
     await tg_worker.stop()
     await mongo.close()
+    if getattr(app.state, "redis", None):
+        await app.state.redis.close()
     await feed.stop()
     await executor.stop()
     await reconciler.stop()

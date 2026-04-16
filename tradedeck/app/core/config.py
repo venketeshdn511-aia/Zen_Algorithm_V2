@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_CHAT_ID: Optional[str] = None
 
+    REDIS_URL: Optional[str] = None
+    REDIS_PASSWORD: Optional[str] = None
+
     # ── Computed Properties ──────────────────────────────────────────────────
     @property
     def ASYNC_DATABASE_URL(self) -> str:
