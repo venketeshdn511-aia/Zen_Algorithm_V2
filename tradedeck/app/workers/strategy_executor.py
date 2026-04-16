@@ -220,17 +220,18 @@ class StrategyExecutor:
             return
 
         tasks = []
-        for name in subscribed:
-            if self._status_cache.get(name) == "running":
-                fn  = self._registry[name]
-                buf = self._tick_buffers[symbol]
-                tasks.append(self._run_safe(name, fn, tick, buf))
+        async with self.session_factory() as db:
+            for name in subscribed:
+                if self._status_cache.get(name) == "running":
+                    fn  = self._registry[name]
+                    buf = self._tick_buffers[symbol]
+                    tasks.append(self._run_strategy(db, name, fn, tick, buf))
 
-        if tasks:
-            # gather — all strategies for this symbol run concurrently
-            # return_exceptions=True — one strategy crash doesn't block others
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            async with self.session_factory() as db:
+            if tasks:
+                # gather — all strategies for this symbol run concurrently using the same session
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Process results sequentially using the same session to avoid contention
                 for name, result in zip(
                     [n for n in subscribed if self._status_cache.get(n) == "running"],
                     results
@@ -239,19 +240,17 @@ class StrategyExecutor:
                         await self._handle_error(db, name, result)
                     elif isinstance(result, dict):
                         await self._update_metrics(db, name, result)
+                
                 await db.commit()
 
-    async def _run_safe(
-        self, name: str, fn: Callable, tick: dict, buf: collections.deque
+    async def _run_strategy(
+        self, db: AsyncSession, name: str, fn: Callable, tick: dict, buf: collections.deque
     ) -> Optional[dict]:
         """
         Run one strategy. Returns metrics dict or raises.
         Strategy signature: async def fn(tick, tick_buffer, db) -> dict
-        tick_buffer is the bounded deque for this symbol — strategies
-        use it for candle construction without needing a DB round-trip.
         """
-        async with self.session_factory() as db:
-            return await fn(tick, buf, db, self.broker, self.risk)
+        return await fn(tick, buf, db, self.broker, self.risk)
 
     async def _handle_error(self, db: AsyncSession, name: str, exc: Exception) -> None:
         tb = traceback.format_exc() if isinstance(exc, Exception) else str(exc)
@@ -338,7 +337,9 @@ class StrategyExecutor:
         new_sig = m.get("signal", "FLAT")
         old_sig = self._prev_signals.get(name)
         
-        if self.notifier and old_sig and new_sig != old_sig:
+        # Trigger on ANY signal change (including first-time signals after restart)
+        # Priming _prev_signals from DB in _ensure_strategy_rows prevents duplicate entry on restart.
+        if self.notifier and (new_sig != old_sig):
             final_target_symbol = m.get("target_symbol") or strategy.symbol or "NIFTY"
             
             # Entry Alert and LIVE ORDER PLACEMENT
@@ -426,8 +427,9 @@ class StrategyExecutor:
                         
                         try:
                             # Actually place the live order
+                            logger.info(f"[ORDER] 📤 Submitting LIVE order for {name}: {order_data}")
                             broker_resp = await self.broker.submit_order(order_data)
-                            logger.info(f"Live Broker Response for {name}: {broker_resp}")
+                            logger.info(f"[ORDER] 📥 Live Broker Response for {name}: {broker_resp}")
                             
                             # Success response format check
                             if broker_resp.get("s") == "ok":
@@ -559,8 +561,9 @@ class StrategyExecutor:
                         
                         try:
                             # Actually place the live order
+                            logger.info(f"[ORDER] 📤 Submitting LIVE EXIT for {name}: {order_data}")
                             broker_resp = await self.broker.submit_order(order_data)
-                            logger.info(f"Live Broker RESPONSE (EXIT) for {name}: {broker_resp}")
+                            logger.info(f"[ORDER] 📥 Live Broker RESPONSE (EXIT) for {name}: {broker_resp}")
                             
                             if broker_resp.get("s") == "ok":
                                 order_id_fyers = broker_resp.get("id")
@@ -626,10 +629,14 @@ class StrategyExecutor:
                      # Just rollback the internal transaction state so we can continue
                     await db.rollback()
             
-            # Refresh cache
+            # Refresh cache (status and signal)
             result = await db.execute(
-                select(StrategyState.status).where(StrategyState.strategy_name == name)
+                select(StrategyState.status, StrategyState.current_signal)
+                .where(StrategyState.strategy_name == name)
             )
             row = result.fetchone()
             if row:
                 self._status_cache[name] = row[0]
+                if row[1]:
+                    self._prev_signals[name] = row[1]
+                    logger.debug(f"Primed strategy signal cache: {name} -> {row[1]}")

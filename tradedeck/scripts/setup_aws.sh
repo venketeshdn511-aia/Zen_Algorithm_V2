@@ -62,16 +62,37 @@ echo "📂 Ensuring deployment directories exist..."
 mkdir -p deploy/nginx/ssl
 mkdir -p logs
 
-# 5. Build and Start Containers
-echo "🏗️ Building and starting containers (using $DOCKER_COMPOSE)..."
+# 5. Enable Swap (Crucial for T2/T3.micro instances during builds)
+if [ ! -f /swapfile ]; then
+    echo "💾 Creating 2GB Swap file for build stability..."
+    sudo fallocate -l 2G /swapfile
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    echo "/swapfile swap swap defaults 0 0" | sudo tee -a /etc/fstab
+    echo "✅ Swap enabled."
+else
+    echo "✅ Swap is already enabled."
+fi
+
+# 6. Build and Start Containers
+echo "🏗️ Building containers sequentially to save RAM (using $DOCKER_COMPOSE)..."
 sudo $DOCKER_COMPOSE down --remove-orphans || true
-sudo $DOCKER_COMPOSE up -d --build
+# Build sequentially — parallel builds crash small instances
+sudo $DOCKER_COMPOSE build --no-cache api
+sudo $DOCKER_COMPOSE up -d
 
 # 6. Run Database Migrations
-echo "🗄️ Running database migrations..."
-# Wait a few seconds for Postgres to be ready
-sleep 5
-sudo $DOCKER_COMPOSE exec -T api python migrate_remote.py || echo "⚠️ Migration failed, but continuing..."
+echo "🗄️ Running database migrations (Pre-startup)..."
+# Wait a bit longer for Postgres to be fully initialized
+sleep 10
+# Run migration in a separate container to ensure tables are created before the main app boots
+sudo $DOCKER_COMPOSE run --rm api python migrate_remote.py || {
+    echo "⚠️ Migration failed. Checking Postgres reachability..."
+    sudo $DOCKER_COMPOSE exec -T postgres pg_isready -U trader
+    exit 1
+}
+echo "✅ Database migrations completed."
 
 # 7. Setup Systemd Persistence
 echo "⚙️ Setting up Systemd service for auto-restart..."

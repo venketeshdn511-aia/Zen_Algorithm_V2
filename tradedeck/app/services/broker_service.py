@@ -261,8 +261,7 @@ class BrokerService:
                 os.path.join(os.getcwd(), ".env"),
                 os.path.join(os.path.dirname(os.getcwd()), ".env"),
                 "/app/.env",
-                "/app/tradedeck/.env",
-                r"c:\Users\Vinay\OneDrive\Desktop\Algo Trading\tradedeck-v2-production\tradedeck\.env"
+                "/app/tradedeck/.env"
             ]
             
             env_path = None
@@ -317,8 +316,10 @@ class BrokerService:
                     raise BrokerError("AUTH_FAILED", "TOTP Login failed")
             
             if response.get("s") != "ok":
+                logger.warning(f"[BROKER] ⚠️ API Call Result (Error): {response}")
                 raise BrokerError(str(response.get("code", "ERROR")), response.get("message", "API Request Failed"))
             
+            logger.debug(f"[BROKER] ✅ API Call Result (Success): {response}")
             return response
         except BrokerError:
             raise

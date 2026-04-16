@@ -55,6 +55,18 @@ def _percentile(data: list[float], pct: float) -> float:
     return round(s[lo] + (idx - lo) * (s[hi] - s[lo]), 1)
 
 
+def _parse_ts(ts_val):
+    if not ts_val: return None
+    if isinstance(ts_val, datetime): return ts_val
+    if isinstance(ts_val, bytes):
+        try: ts_val = ts_val.decode()
+        except: return None
+    if isinstance(ts_val, str):
+        try: return datetime.fromisoformat(ts_val.replace('Z', '+00:00'))
+        except: return None
+    return None
+
+
 async def _get_feed_health(db: AsyncSession, redis_client=None) -> dict:
     """
     Real feed health. Priority:
@@ -72,23 +84,28 @@ async def _get_feed_health(db: AsyncSession, redis_client=None) -> dict:
         try:
             raw = await redis_client.get("tradedeck:last_tick_ts")
             if raw:
-                last_tick = datetime.fromisoformat(raw.decode())
-                # Strip timezone if present to avoid math crash
-                if last_tick.tzinfo:
-                    last_tick = last_tick.replace(tzinfo=None)
-                
-                age_s     = (now - last_tick).total_seconds()
-                ws_conn   = bool(await redis_client.get("tradedeck:ws_connected"))
-                status    = "live" if age_s < 1.0 else "stale" if age_s < 3.0 else "dead"
-                return {
-                    "age_seconds":  round(age_s, 2),
-                    "ws_connected": ws_conn,
-                    "status":       status,
-                    "source":       "redis",
-                    "last_tick_utc": last_tick.isoformat(),
-                }
+                # Use robust parser that handles both bytes and str, and Z replacement
+                last_tick = _parse_ts(raw)
+                if last_tick:
+                    # Strip timezone if present to avoid math crash
+                    if last_tick.tzinfo:
+                        last_tick = last_tick.replace(tzinfo=None)
+                    
+                    age_s     = (now - last_tick).total_seconds()
+                    raw_conn  = await redis_client.get("tradedeck:ws_connected")
+                    ws_conn   = (raw_conn == "1")
+                    status    = "live" if age_s < 1.0 else "stale" if age_s < 3.0 else "dead"
+                    return {
+                        "age_seconds":  round(age_s, 2),
+                        "ws_connected": ws_conn,
+                        "status":       status,
+                        "source":       "redis",
+                        "last_tick_utc": last_tick.isoformat(),
+                    }
         except Exception as e:
             logger.warning(f"Redis feed health check failed: {e} — falling back to DB")
+
+    # ── Fall back to PostgreSQL feed_heartbeat ─────────────────────────────
 
     # ── Fall back to PostgreSQL feed_heartbeat ─────────────────────────────
     try:
@@ -216,13 +233,6 @@ async def _get_redis_stats(redis_client=None) -> dict:
 
 import traceback
 
-def _parse_ts(ts_val):
-    if not ts_val: return None
-    if isinstance(ts_val, datetime): return ts_val
-    if isinstance(ts_val, str):
-        try: return datetime.fromisoformat(ts_val.replace('Z', '+00:00'))
-        except: return None
-    return None
 
 @router.get("/telemetry")
 async def get_telemetry(

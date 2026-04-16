@@ -14,6 +14,9 @@ if settings.ASYNC_DATABASE_URL.startswith("sqlite"):
 engine = create_async_engine(
     settings.ASYNC_DATABASE_URL,
     echo=False,
+    pool_size=20,           # Increase from default 5
+    max_overflow=10,        # Allow 10 extra temporary connections
+    pool_timeout=30,        # Wait up to 30s for a connection
     pool_pre_ping=True,
     connect_args=connect_args
 )

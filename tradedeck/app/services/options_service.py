@@ -31,7 +31,7 @@ class OptionsService:
                         "FyToken", "SymbolDetails", "ExchangeInstrumentId", "MinimumLotSize",
                         "TickSize", "ISIN", "TradingSession", "LastUpdateDate", "ExpiryDate",
                         "SymbolTicker", "Exchange", "Segment", "ScripCode", "UnderlyingScripCode",
-                        "StrikePrice", "OptionType", "UnderlyingFyToken", "Reserved1", "Reserved2", "Reserved3", "Reserved4"
+                        "StrikePrice", "OptionType", "UnderlyingFyToken"
                     ], usecols=list(range(17)))
                     
                     # Keep only NIFTY Options
