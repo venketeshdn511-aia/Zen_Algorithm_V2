@@ -31,13 +31,13 @@ async def diag():
     try:
         mongo = MongoDBService(settings.MONGO_URI)
         await mongo.connect()
-        print("✅ MongoDB Connected")
+        print(" MongoDB Connected")
         
         # Check for tokens in MongoDB
         access_token = await mongo.get_config("fyers_access_token")
         print(f"Token in MongoDB: {'YES' if access_token else 'NO'}")
     except Exception as e:
-        print(f"❌ MongoDB Error: {e}")
+        print(f"ERROR MongoDB: {e}")
         return
 
     # 3. Fyers Broker Check
@@ -49,7 +49,7 @@ async def diag():
         print("Syncing funds...")
         funds = await broker.client.funds()
         if funds.get("s") == "ok":
-            print("✅ Fyers API Connected & Authenticated")
+            print("OK Fyers API Connected & Authenticated")
             # Look for available balance
             balance = 0
             for item in funds.get("fund_limit", []):
@@ -58,9 +58,9 @@ async def diag():
                     break
             print(f"Available Balance: {balance}")
         else:
-            print(f"❌ Fyers Auth Error: {funds.get('message', 'Unknown Error')}")
+            print(f"ERROR Fyers Auth: {funds.get('message', 'Unknown Error')}")
     except Exception as e:
-        print(f"❌ Broker Init Error: {e}")
+        print(f"ERROR Broker Init: {e}")
 
     # 4. Database Heartbeat Check
     print("\n--- Database Heartbeat Check ---")
@@ -69,13 +69,13 @@ async def diag():
             r = await db.execute(text("SELECT * FROM feed_heartbeat"))
             rows = r.fetchall()
             if rows:
-                print(f"✅ Database Accessible. Feed Heartbeats found: {len(rows)}")
+                print(f"OK Database Accessible. Feed Heartbeats found: {len(rows)}")
                 for row in rows:
                     print(f"  - {row}")
             else:
-                print("⚠️ Database Accessible but feed_heartbeat table is empty.")
+                print("WARNING Database Accessible but feed_heartbeat table is empty.")
     except Exception as e:
-        print(f"❌ Database Error: {e}")
+        print(f"ERROR Database: {e}")
 
     await mongo.close()
     print("\n=== Diagnostic Complete ===")

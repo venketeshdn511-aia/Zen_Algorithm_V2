@@ -469,6 +469,8 @@ class StrategyExecutor:
             # Exit Alert and LIVE ORDER PLACEMENT
             elif new_sig.startswith("EXIT_"):
                 # 1. Determine execution parameters
+                # Priority: 1. target_symbol from signal 2. target_instrument resolution 3. strategy index ticker
+                
                 # Use qty from strategy signal; fallback is current NIFTY lot size (65)
                 qty = m.get("open_qty", 65)
                 # Opposite side to exit: If we were Long (BUY), we now SELL to exit (-1). If Short, BUY to exit (1).

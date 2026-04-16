@@ -211,7 +211,14 @@ class BrokerService:
                     logger.info("[BROKER] 🔑 Step 4: Auth Code captured.")
 
                     # 5. finalize
+                    # A small delay here prevents "invalid auth code" race conditions on Fyers side
+                    await asyncio.sleep(1.5)
+                    
+                    # Fyers v3 appIdHash format: appId:secretId
+                    # Ensure appId contains the -100/-200 suffix if provided in config
                     app_hash = hashlib.sha256(f"{self.app_id}:{self.secret_id}".encode()).hexdigest()
+                    
+                    logger.info(f"[BROKER] 🔑 Step 5: Validating auth_code with hash {app_hash[:10]}...")
                     r5 = await client.post("https://api-t1.fyers.in/api/v3/validate-authcode", json={
                         "grant_type": "authorization_code", "appIdHash": app_hash, "code": auth_code
                     })
